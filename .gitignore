@@ -3,5 +3,5 @@ docker-compose.yml
 .env
 .envrc
 sandbox/
+app/secrets.py
 **/secrets.py
-fastapi/app/secrets.py

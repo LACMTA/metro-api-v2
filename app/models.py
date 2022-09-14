@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint, Float,PrimaryKeyConstraint
 
 from .database import Base
 class User(Base):
@@ -6,6 +6,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String)
     email = Column(String, unique=True, index=True)
+    email_token = Column(String)
+    api_token = Column(String)
     email_token = Column(String)
     api_token = Column(String)
     hashed_password = Column(String)

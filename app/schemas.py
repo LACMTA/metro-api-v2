@@ -8,6 +8,11 @@ class EmailVerifyToken(BaseModel):
     # email_token: str
     # token_type: str
 
+class EmailVerifyToken(BaseModel):
+    email_address: str
+    # email_token: str
+    # token_type: str
+
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -22,6 +27,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     username: str
     password: str
+    # email_token: str
     # email_token: str
 
 class User(UserBase):

@@ -17,12 +17,17 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 
 from sqlalchemy.orm import aliased
 
+from sqlalchemy.orm import aliased
+
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from pydantic import BaseModel, Json, ValidationError
 
 from starlette.middleware.cors import CORSMiddleware
+
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
@@ -44,6 +49,7 @@ from .gtfs_rt import *
 from pathlib import Path
 
 from logzio.handler import LogzioHandler
+from fastapi_restful.tasks import repeat_every
 from fastapi_restful.tasks import repeat_every
 
 UPDATE_INTERVAL = 300
@@ -95,7 +101,9 @@ app = FastAPI()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 ####################
+# ###################
 #  Begin Routes
+####################
 ####################
 
 # tokens
@@ -262,6 +270,45 @@ async def vehicle_positions(service, output_format: Optional[str] = None):
         result = get_vehicle_positions(service, '')
         return Response(content=result, media_type="application/x-protobuf")
 
+### bus endpoints ### :)
+
+@app.get("/bus/stop_times/{trip_id}")
+async def get_bus_stop_times_by_route_code(trip_id, db: Session = Depends(get_db)):
+    result = crud.get_bus_stop_times_by_trip_id(db,trip_id)
+    json_compatible_item_data = jsonable_encoder(result)
+    return JSONResponse(content=json_compatible_item_data)
+
+@app.get("/bus/stop_times/route_code/{route_code}")
+async def get_bus_stop_times_by_route_code(route_code, db: Session = Depends(get_db)):
+    result = crud.get_bus_stop_times_by_route_code(db,route_code)
+    json_compatible_item_data = jsonable_encoder(result)
+    return JSONResponse(content=json_compatible_item_data)
+
+@app.get("/bus/stops/{stop_id}")
+async def get_bus_stops(stop_id, db: Session = Depends(get_db)):
+    result = crud.get_bus_stops(db,stop_id)
+    json_compatible_item_data = jsonable_encoder(result)
+    return JSONResponse(content=json_compatible_item_data)
+
+@app.get("/bus/trips/{trip_id}")
+async def get_bus_trips(trip_id, db: Session = Depends(get_db)):
+    # table_alias = aliased(models.Trips)
+    result = crud.get_gtfs_data(db,models.Trips,'trip_id',trip_id)
+    json_compatible_item_data = jsonable_encoder(result)
+    return JSONResponse(content=json_compatible_item_data)
+
+@app.get("/bus/shapes/{shape_id}")
+async def get_bus_shapes(shape_id, db: Session = Depends(get_db)):
+    result = crud.get_gtfs_data(db,models.Shapes,'shape_id',shape_id)
+    json_compatible_item_data = jsonable_encoder(result)
+    return JSONResponse(content=json_compatible_item_data)
+
+@app.get("/bus/routes/{route_id}")
+async def get_bus_routes(route_id, db: Session = Depends(get_db)):
+    result = crud.get_gtfs_data(db,models.Routes,'route_id',route_id)
+    json_compatible_item_data = jsonable_encoder(result)
+    return JSONResponse(content=json_compatible_item_data)
+    
 ### bus endpoints ### :)
 
 @app.get("/bus/stop_times/{trip_id}")
