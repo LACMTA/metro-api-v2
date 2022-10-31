@@ -84,7 +84,7 @@ class CalendarDates(Base):
 
 class Calendar(Base):
     __tablename__ = "calendar"
-    service_id = Column(String, index=True)
+    service_id = Column(String, primary_key=True, index=True)
     monday = Column(Integer)
     tuesday = Column(Integer)
     wednesday = Column(Integer)
