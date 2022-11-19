@@ -14,3 +14,4 @@ notebooks/config.py
 notebooks/database.py
 notebooks/models.py
 notebooks/manual_gtfs_static_update.ipynb
+notebooks/
