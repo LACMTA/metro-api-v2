@@ -173,6 +173,7 @@ def update_gtfs_realtime_data():
     combined_vehicle_position_df.to_postgis('vehicle_position_updates',engine,index=False,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
     combined_stop_time_df.to_sql('stop_time_updates',engine,index=False,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
     combined_trip_update_df['stop_time_json'].astype(str)
+    # combined_trip_update_dfset_index(['Symbol','Date']
     combined_trip_update_df.to_sql('trip_updates',engine,index=False,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
     process_end = timeit.default_timer()
     # print('===GTFS Update process took {} seconds'.format(process_end - process_start)+"===")

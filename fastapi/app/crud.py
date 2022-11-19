@@ -10,8 +10,10 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 from sqlalchemy.orm import aliased
 from sqlalchemy import and_
-from geoalchemy2 import functions
-
+from geoalchemy2 import functions,shape
+from shapely.geometry import Point
+from shapely import geometry as geo
+# from shapely import to_geojson
 from app import gtfs_models
 
 from . import models, schemas,gtfs_models
@@ -43,7 +45,6 @@ def temp_solution(val):
 def list_gtfs_rt_trips_by_field_name(db, field_name: str,agency_id: str):
     result = []
     if field_name == 'stop_id':
-        print('in stop id field name')
         the_query = db.query(getattr(gtfs_models.StopTimeUpdate,field_name),gtfs_models.StopTimeUpdate.agency_id).with_entities(getattr(gtfs_models.StopTimeUpdate,field_name)).filter(gtfs_models.StopTimeUpdate.agency_id == agency_id).all()
     else:
         the_query = db.query(getattr(gtfs_models.TripUpdate,field_name),gtfs_models.TripUpdate.agency_id).with_entities(getattr(gtfs_models.TripUpdate,field_name)).filter(gtfs_models.TripUpdate.agency_id == agency_id).all()
@@ -84,21 +85,47 @@ def get_all_gtfs_rt_trips(db, agency_id:str):
         result.append(new_row)
     return result
 
-def get_all_gtfs_rt_vehicle_positions(db, agency_id: str):
+def get_all_gtfs_rt_vehicle_positions(db, agency_id: str,geojson:bool):
     the_query = db.query(gtfs_models.VehiclePosition).filter(gtfs_models.VehiclePosition.agency_id == agency_id).all()
     result = []
-    for row in the_query:
-        new_row = vehicle_position_reformat(row)
-        result.append(new_row)
+    if geojson == True:
+        this_json = {}
+        print('in true')
+        count = 0
+        features = []
+        for row in the_query:
+            count += 1
+            features.append(vehicle_position_reformat(row,geojson))
+        this_json['metadata'] = {'count': count}
+        this_json['metadata'] = {'title': 'Vehicle Positions'}
+        this_json['type'] = "FeatureCollection"
+        this_json['features'] = features
+        return this_json
+    else:
+        for row in the_query:
+            new_row = vehicle_position_reformat(row,geojson)
+            result.append(new_row)
     return result
 
-def get_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,field_value: str,agency_id: str):
+def get_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,field_value: str,geojson:bool,agency_id: str):
     if field_value is None:
         the_query = db.query(gtfs_models.VehiclePosition).filter(gtfs_models.VehiclePosition.agency_id == agency_id).all()
     the_query = db.query(gtfs_models.VehiclePosition).filter(getattr(gtfs_models.VehiclePosition,field_name) == field_value,gtfs_models.VehiclePosition.agency_id == agency_id).all()
     result = []
+    if geojson == True:
+        this_json = {}
+        count = 0
+        features = []
+        for row in the_query:
+            count += 1
+            features.append(vehicle_position_reformat(row,geojson))
+        this_json['metadata'] = {'count': count}
+        this_json['metadata'] = {'title': 'Vehicle Positions'}
+        this_json['type'] = "FeatureCollection"
+        this_json['features'] = features
+        return this_json
     for row in the_query:
-        new_row = vehicle_position_reformat(row)
+        new_row = vehicle_position_reformat(row,geojson)
         result.append(new_row)
     return result
 
@@ -125,15 +152,93 @@ def get_bus_stops(db, stop_code: int,agency_id: str):
     # return schemas.UserInDB(**user_dict)
     return the_query
 
+def get_agency_data(db, tablename,agency_id):
+    aliased_table = aliased(tablename)
+    the_query = db.query(aliased_table).filter(getattr(aliased_table,'agency_id') == agency_id).all()
+    return the_query
+
+def get_shape_list(db,agency_id):
+    the_query = db.query(models.Shapes).filter(models.Shapes.agency_id == agency_id).all()
+    result = []
+    for row in the_query:
+        result.append(row.shape_id)
+    return result
+
+def get_shape_all(db,agency_id):
+    the_query = db.query(models.Shapes).filter(models.Shapes.agency_id == agency_id).all()
+    result = []
+    # for row in the_query:
+    #     result.append(row.shape_id)
+    for row in the_query:
+        this_object = {}
+        this_object['type'] = 'Feature' 
+        this_object['geometry']= JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
+        del row.geometry
+        this_object['properties'] = row
+        result.append(this_object)
+    return result
+
+def get_trip_shapes_list(db,agency_id):
+    the_query = db.query(models.TripShapes).filter(models.TripShapes.agency_id == agency_id).all()
+    result = []
+    for row in the_query:
+        result.append(row.shape_id)
+    return result
+
+def get_trip_shapes_all(db,agency_id):
+    the_query = db.query(models.TripShapes).filter(models.TripShapes.agency_id == agency_id).all()
+    result = []
+    for row in the_query:
+        this_object = {}
+        this_object['type'] = 'Feature' 
+        this_object['geometry']= JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
+        del row.geometry
+        this_object['properties'] = row
+        result.append(this_object)
+    return result
+
+def get_trip_shape(db,shape_id,agency_id):
+    the_query = db.query(models.TripShapes).filter(models.TripShapes.shape_id == shape_id,models.TripShapes.agency_id== agency_id).all()
+    for row in the_query:
+        new_object = {}
+        new_object['type'] = 'Feature' 
+        new_object['geometry']= JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
+        properties = {}
+        properties = {'shape_id': row.shape_id,'agency_id': row.agency_id}
+        new_object['properties'] = properties
+        return new_object
+
+def get_shape_by_id(db,shape_id,agency_id):
+    the_query = db.query(models.Shapes).filter(models.Shapes.shape_id == shape_id,models.Shapes.agency_id== agency_id).all()
+    for row in the_query:
+        new_object = {}
+        new_object['type'] = 'Feature' 
+        new_object['geometry']= JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
+        properties = {}
+        properties = {'shape_id': row.shape_id,'agency_id': row.agency_id}
+        new_object['properties'] = properties
+        return new_object
+
+def get_calendar_list(db,agency_id):
+    the_query = db.query(models.Calendar).filter(models.Calendar.agency_id == agency_id).all()
+    result = []
+    for row in the_query:
+        result.append(row.service_id)
+    return result
+
 # generic function to get the gtfs static data
 def get_gtfs_static_data(db, tablename,column_name,query,agency_id):
     aliased_table = aliased(tablename)
-    if "geometry" in aliased_table.__table__.columns:
-        the_query = db.query(aliased_table,functions.ST_AsGeoJSON(aliased_table.geometry)).filter(getattr(aliased_table,column_name) == query,getattr(aliased_table,'agency_id') == agency_id).all()
+    if query == 'list':
+            the_query = db.query(aliased_table).filter(getattr(aliased_table,column_name) == query,getattr(aliased_table,'agency_id') == agency_id).all()
     else:
         the_query = db.query(aliased_table).filter(getattr(aliased_table,column_name) == query,getattr(aliased_table,'agency_id') == agency_id).all()
     return the_query
-    
+
+def get_calendar_data_by_id(db,service_id,agency_id):
+    the_query = db.query(models.Calendar).filter(models.Calendar.service_id == service_id,models.Calendar.agency_id == agency_id).all()
+    return the_query
+
 def get_bus_stops_by_name(db, name: str):
     the_query = db.query(models.Stops).filter(models.Stops.stop_name.contains(name)).all()
     return the_query
@@ -153,6 +258,15 @@ def get_canceled_trips(db, trp_route: str):
         return the_query
 
 ## go pass data
+def get_gopass_schools_combined_phone(db,groupby_column='id'):
+    # the_query = db.query(models.GoPassSchools).filter(models.GoPassSchools.school != None).all()
+    the_query = db.execute("SELECT "+groupby_column+", string_agg(distinct(phone), ' | ') AS phone_list FROM go_pass_schools GROUP  BY 1;")    
+    temp_dictionary, temp_array = {}, []
+    for rowproxy in the_query:
+        # rowproxy.items() returns an array like [(key0, value0), (key1, value1)]
+        temp_array.append(rowproxy)
+    return temp_array
+
 def get_gopass_schools(db, show_missing: bool):
     if show_missing == True:
         the_query = db.query(models.GoPassSchools).query(models.GoPassSchools).all()

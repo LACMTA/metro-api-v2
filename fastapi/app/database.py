@@ -18,7 +18,6 @@ Base = declarative_base(metadata=MetaData(schema=Config.TARGET_DB_SCHEMA))
 def get_db():
     db = Session()
     try:
-        logger.info('Connected to the database')
         yield db
     finally:
         db.close()

@@ -6,7 +6,6 @@ import requests
 import csv
 import os
 
-
 import pytz
 
 from typing import Dict, List, Optional
@@ -14,6 +13,7 @@ from typing import Dict, List, Optional
 from datetime import timedelta, date, datetime
 
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
+# from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse,PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -26,6 +26,13 @@ from pydantic import BaseModel, Json, ValidationError
 
 from starlette.middleware.cors import CORSMiddleware
 
+# from fastapi_cache import FastAPICache
+# from fastapi_cache.backends.redis import RedisBackend
+# from fastapi_cache.decorator import cache
+from starlette.requests import Request
+from starlette.responses import Response
+
+# from redis import asyncio as aioredis
 from enum import Enum
 
 # for OAuth2
@@ -41,6 +48,27 @@ from .config import Config
 from pathlib import Path
 
 from logzio.handler import LogzioHandler
+import logging
+import typing as t
+
+
+
+class EndpointFilter(logging.Filter):
+    def __init__(
+        self,
+        path: str,
+        *args: t.Any,
+        **kwargs: t.Any,
+    ):
+        super().__init__(*args, **kwargs)
+        self._path = path
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find(self._path) == -1
+
+uvicorn_logger = logging.getLogger("uvicorn.access")
+# uvicorn_logger.addFilter(EndpointFilter(path="/"))
+# uvicorn_logger.addFilter(EndpointFilter(path="/LACMTA/shapes/"))
 
 UPDATE_INTERVAL = 300
 
@@ -57,6 +85,9 @@ PATH_TO_CANCELED_JSON = os.path.realpath(TARGET_PATH_CANCELED_JSON)
 class AgencyIdEnum(str, Enum):
     LACMTA = "LACMTA"
     LACMTA_Rail = "LACMTA_Rail"
+class GoPassGroupEnum(str, Enum):
+    ID = "id"
+    SCHOOL = "school"
 
 class TripUpdatesFieldsEnum(str, Enum):
     trip_id = "trip_id"
@@ -84,7 +115,6 @@ templates = Jinja2Templates(directory="app/frontend")
 app.mount("/", StaticFiles(directory="app/frontend"))
 
 # code from https://fastapi-restful.netlify.app/user-guide/repeated-tasks/
-@app.on_event("startup")
 
 def csv_to_json(csvFilePath, jsonFilePath):
     jsonArray = []
@@ -135,6 +165,7 @@ def standardize_string(input_string):
 ####################
 
 @app.get("/{agency_id}/trip_updates/all",tags=["Real-Time data"])
+# @cache()
 async def all_trip_updates_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
     result = crud.get_all_gtfs_rt_trips(db,agency_id.value)
     return result
@@ -163,12 +194,16 @@ async def get_gtfs_rt_trip_updates_by_field_name(agency_id: AgencyIdEnum, field_
             return result
 
 @app.get("/{agency_id}/vehicle_positions/all",tags=["Real-Time data"])
-async def all_vehicle_position_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
-    result = crud.get_all_gtfs_rt_vehicle_positions(db,agency_id.value)
+async def all_vehicle_position_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db),geojson: bool = False):
+    result = crud.get_all_gtfs_rt_vehicle_positions(db,agency_id.value,geojson)
     return result
+# @app.get("/{agency_id}/vehicle_positions_no_cache/all",tags=["Real-Time data"])
+# async def all_vehicle_position_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
+#     result = crud.get_all_gtfs_rt_vehicle_positions(db,agency_id.value,geojson=False)
+#     return result
 
 @app.get("/{agency_id}/vehicle_positions/{field_name}/{field_value}",tags=["Real-Time data"])
-async def vehicle_position_updates(agency_id: AgencyIdEnum, field_name: VehiclePositionsFieldsEnum, field_value=Optional[str], db: Session = Depends(get_db)):
+async def vehicle_position_updates(agency_id: AgencyIdEnum, field_name: VehiclePositionsFieldsEnum, geojson:bool=False,field_value=Optional[str], db: Session = Depends(get_db)):
     # result = crud.get_gtfs_rt_vehicle_positions_by_field_name(db,field_name,field_value,agency_id)
     if field_name in get_columns_from_schema('vehicle_position_updates'):
         if field_value == 'list':
@@ -178,13 +213,13 @@ async def vehicle_position_updates(agency_id: AgencyIdEnum, field_name: VehicleP
         if len(multiple_values) > 1:
             result_array = []
             for value in multiple_values:
-                result = crud.get_gtfs_rt_vehicle_positions_by_field_name(db,field_name.value,value,agency_id.value)
+                result = crud.get_gtfs_rt_vehicle_positions_by_field_name(db,field_name.value,value,geojson,agency_id.value)
                 if len(result) == 0:
                     temp_result = { "message": "field_value '" + value + "' not found in field_name '" + field_name.value + "'" }
                 result_array.append(temp_result)
             return result_array
         else:
-            result = crud.get_gtfs_rt_vehicle_positions_by_field_name(db,field_name.value,field_value,agency_id.value)
+            result = crud.get_gtfs_rt_vehicle_positions_by_field_name(db,field_name.value,field_value,geojson,agency_id.value)
             if len(result) == 0:
                 result = { "message": "field_value '" + field_value + "' not found in field_name '" + field_name.value + "'" }
                 return result
@@ -220,10 +255,6 @@ async def get_gtfs_rt_stop_times_updates_by_trip_id(agency_id: AgencyIdEnum,trip
     result = crud.get_gtfs_rt_stop_times_by_trip_id(db,trip_id,agency_id.value)
     return result
 
-@app.get("/{agency_id}/stop_times/{trip_id}",tags=["Real-Time data"])
-async def get_stop_times_by_trip_and_agency(agency_id: AgencyIdEnum,trip_id, db: Session = Depends(get_db)):
-    result = crud.get_stop_times_by_trip_id(db,trip_id,agency_id.value)
-    return result
 
 #### END GTFS-RT Routes ####
 
@@ -266,13 +297,48 @@ async def get_bus_trips(agency_id: AgencyIdEnum,trip_id, db: Session = Depends(g
     return result
 
 @app.get("/{agency_id}/shapes/{shape_id}",tags=["Static data"])
-async def get_bus_shapes(agency_id: AgencyIdEnum,shape_id, db: Session = Depends(get_db)):
-    result = crud.get_gtfs_static_data(db,models.Shapes,'shape_id',shape_id,agency_id.value)
+async def get_shapes(agency_id: AgencyIdEnum,shape_id, db: Session = Depends(get_db)):
+    if shape_id == "all":
+        result = crud.get_shape_all(db,agency_id.value)
+    elif shape_id == "list":
+        result = crud.get_shape_list(db,agency_id.value)
+    else: 
+        result = crud.get_shape_by_id(db,shape_id,agency_id.value)
     return result
 
+@app.get("/{agency_id}/trip_shapes/{shape_id}",tags=["Static data"])
+async def get_trip_shapes(agency_id: AgencyIdEnum,shape_id, db: Session = Depends(get_db)):
+    if shape_id == "all":
+        result = crud.get_trip_shapes_all(db,agency_id.value)
+    elif shape_id == "list":
+        result = crud.get_trip_shapes_list(db,agency_id.value)
+    else: 
+        result = crud.get_trip_shape(db,shape_id,agency_id.value)
+    return result
+
+@app.get("/{agency_id}/calendar/{service_id}",tags=["Static data"])
+async def get_calendar_list(agency_id: AgencyIdEnum,service_id, db: Session = Depends(get_db)):
+    if service_id == "list":
+        result = crud.get_calendar_list(db,agency_id.value)
+    else:
+        result = crud.get_gtfs_static_data(db,models.Calendar,'service_id',service_id,agency_id.value)
+    return result
+
+
+@app.get("/{agency_id}/calendar/{service_id}",tags=["Static data"])
+async def get_calendar(agency_id: AgencyIdEnum,service_id, db: Session = Depends(get_db)):
+    result = crud.get_calendar_data_by_id(db,models.Calendar,service_id,agency_id.value)
+    return result
+
+
 @app.get("/{agency_id}/routes/{route_id}",tags=["Static data"])
-async def get_bus_routes(agency_id: AgencyIdEnum,route_id, db: Session = Depends(get_db)):
+async def get_routes(agency_id: AgencyIdEnum,route_id, db: Session = Depends(get_db)):
     result = crud.get_gtfs_static_data(db,models.Routes,'route_id',route_id,agency_id.value)
+    return result
+
+@app.get("/{agency_id}/agency/",tags=["Static data"])
+async def get_agency(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
+    result = crud.get_agency_data(db,models.Agency,agency_id.value)
     return result
 
 #### END GTFS Static data endpoints ####
@@ -282,9 +348,13 @@ async def get_bus_routes(agency_id: AgencyIdEnum,route_id, db: Session = Depends
 #### Begin Other data endpoints ####
 
 @app.get("/get_gopass_schools",tags=["Other data"])
-async def get_gopass_schools(db: Session = Depends(get_db),show_missing: bool = False):
-    result = crud.get_gopass_schools(db,show_missing)
-    json_compatible_item_data = jsonable_encoder(result)
+async def get_gopass_schools(db: Session = Depends(get_db),show_missing: bool = False,combine_phone:bool = False,groupby_column:GoPassGroupEnum = None):
+    if combine_phone == True:
+        result = crud.get_gopass_schools_combined_phone(db,groupby_column.value)
+        return result
+    else:
+        result = crud.get_gopass_schools(db,show_missing)
+        json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
 @app.get("/time")
@@ -294,7 +364,7 @@ async def get_time():
 
 # @app.get("/agencies/")
 # async def root():
-#     return {"Metro API Version": "2.1.5"}
+#     return {"Metro API Version": "2.1.6"}
 
 # Frontend Routing
 
@@ -402,3 +472,8 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+# @app.on_event("startup")
+# async def startup_redis():
+#     redis =  aioredis.from_url("redis://redis", encoding="utf8", decode_responses=True)
+#     FastAPICache.init(RedisBackend(redis), prefix="fastapi-cache")

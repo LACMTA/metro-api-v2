@@ -1,39 +1,34 @@
 from typing import Optional
-from pydantic import BaseModel, Json, ValidationError
+from pydantic import BaseModel, Json, ValidationError,validator
 
 from .config import Config
 
-class EmailVerifyToken(BaseModel):
-    email_address: str
-    # email_token: str
-    # token_type: str
+class Agency(BaseModel):
+    agency_id: str
+    agency_name: str
+    agency_url: str
+    agency_timezone: str
+    agency_lang: str
+    agency_phone: str
 
-class Token(BaseModel):
-    access_token: str
-    token_type: str
-
-class TokenData(BaseModel):
-    username: Optional[str] = None
-
-class UserBase(BaseModel):
-    username: str
-    email: str
-
-class UserCreate(UserBase):
-    username: str
-    password: str
-    # email_token: str
-
-class User(UserBase):
-    id: int
-    is_active: bool
-
-    class Config:
-        orm_mode = True
-
-class UserInDB(User):
-    hashed_password: str
-
+class Calendar(BaseModel):
+    service_id: str
+    monday: int
+    tuesday: int
+    wednesday: int
+    thursday: int
+    friday: int
+    saturday: int
+    sunday: int
+    start_date: int
+    end_date: int
+    agency_id: str
+class CalendarDates(BaseModel):
+    service_id: str
+    date: str
+    exception_type: int
+    agency_id: str
+    
 class CanceledServiceData(BaseModel):
     gtfs_trip_id: str
     trip_route: str
@@ -73,18 +68,7 @@ class Stops(BaseModel):
     parent_station: str
     tpis_name: str
     agency_id: str
-    geometry: str = f'SRID=4326;POINT(0,0)'
-
-class Trips(BaseModel):
-    route_id: int
-    service_id: str
-    trip_id: str
-    trip_headsign: str
-    direction_id: int
-    block_id: int
-    shape_id: str
-    trip_id_event: str
-    agency_id: str
+    geometry: str
 
 class Routes(BaseModel):
     route_id: int
@@ -94,13 +78,19 @@ class Routes(BaseModel):
     route_type: int
     agency_id: str
 
+class TripShapes(BaseModel):
+    shape_id: str
+    geometry: str
+    agency_id: str
+    
 class Shapes(BaseModel):
     shape_id: str
     shape_pt_lat: float
     shape_pt_lon: float
     shape_pt_sequence: int
     agency_id: str
-    geometry: str = f'SRID=4326;POINT(0,0)'
+    geometry: str
+    shape_id_sequence: str
 
 class StopTimeUpdates(BaseModel):
     stop_sequence: int
@@ -115,6 +105,16 @@ class StopTimeUpdates(BaseModel):
     # oid: int
     # trip_update_id: int
 
+class Trips(BaseModel):
+    route_id: int
+    service_id: str
+    trip_id: str
+    trip_headsign: str
+    direction_id: int
+    block_id: int
+    shape_id: str
+    trip_id_event: str
+    agency_id: str
 
 class TripUpdates(BaseModel):
     trip_id: str
@@ -148,13 +148,8 @@ class VehiclePositions(BaseModel):
     id: int
     agency_id: str
     timestamp: int
-    geometry: str = f'SRID=4326;POINT(0,0)'
+    geometry: str
 
-class CalendarDates(BaseModel):
-    service_id: str
-    date: str
-    exception_type: int
-    agency_id: str
 class GoPassSchools(BaseModel):
     phone: str
     participating: bool
@@ -196,3 +191,37 @@ class CanceledServices(BaseModel):
     CostCenter: str
     blk_garage: str
     LastUpdateDate: str
+
+
+
+
+class EmailVerifyToken(BaseModel):
+    email_address: str
+    # email_token: str
+    # token_type: str
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+class UserBase(BaseModel):
+    username: str
+    email: str
+
+class UserCreate(UserBase):
+    username: str
+    password: str
+    # email_token: str
+
+class User(UserBase):
+    id: int
+    is_active: bool
+
+    class Config:
+        orm_mode = True
+
+class UserInDB(User):
+    hashed_password: str

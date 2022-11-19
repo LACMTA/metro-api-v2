@@ -2,17 +2,38 @@ from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,Prima
 from geoalchemy2 import *
 
 from .database import Base
-class User(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String)
-    email = Column(String, unique=True, index=True)
-    email_token = Column(String)
-    api_token = Column(String)
-    hashed_password = Column(String)
-    is_email_verified = Column(Boolean, default=False)
-    is_active = Column(Boolean, default=False)
 
+
+class Agency(Base):
+    __tablename__ = "agency"
+    agency_id = Column(String, primary_key=True, index=True)
+    agency_name = Column(String)
+    agency_url = Column(String)
+    agency_timezone = Column(String)
+    agency_lang = Column(String)
+    agency_phone = Column(String)
+
+class Calendar(Base):
+    __tablename__ = "calendar"
+    service_id = Column(String, primary_key=True, index=True)
+    monday = Column(Integer)
+    tuesday = Column(Integer)
+    wednesday = Column(Integer)
+    thursday = Column(Integer)
+    friday = Column(Integer)
+    saturday = Column(Integer)
+    sunday = Column(Integer)
+    start_date = Column(Integer)
+    end_date = Column(Integer)
+    agency_id = Column(String)
+
+class CalendarDates(Base):
+    __tablename__ = "calendar_dates"
+    service_id = Column(String, primary_key=True, index=True)
+    agency_id = Column(String)
+    date = Column(String)
+    exception_type = Column(Integer)
+    agency_id = Column(String)
 class StopTimes(Base):
     __tablename__ = "stop_times"
     trip_id = Column(String)
@@ -46,17 +67,7 @@ class Stops(Base):
     tpis_name = Column(String)
     agency_id = Column(String)
 
-class Trips(Base):
-    __tablename__ = "trips"
-    route_id = Column(Integer, primary_key=True, index=True)
-    service_id = Column(String)
-    trip_id = Column(String)
-    trip_headsign = Column(String)
-    direction_id = Column(Integer)
-    block_id = Column(Integer)
-    shape_id = Column(String)
-    trip_id_event = Column(String)
-    agency_id = Column(String)
+
 class Routes(Base):
     __tablename__ = "routes"
     route_id = Column(Integer, primary_key=True, index=True)
@@ -68,22 +79,36 @@ class Routes(Base):
     route_text_color = Column(String)
     route_url = Column(String)
     agency_id = Column(String)
+
+class TripShapes(Base):
+    __tablename__ = "trip_shapes"
+    shape_id = Column(String, primary_key=True, index=True)
+    geometry = Column(Geometry('LINESTRING', srid=4326))
+    agency_id = Column(String)
+
 class Shapes(Base):
     __tablename__ = "shapes"
-    shape_id = Column(String, primary_key=True, index=True)
+    shape_id_sequence = Column(String, primary_key=True, index=True)
+    shape_id = Column(String)
     shape_pt_lat = Column(Float)
     shape_pt_lon = Column(Float)
     geometry = Column(Geometry('POINT', srid=4326))
     shape_pt_sequence = Column(Integer)
     agency_id = Column(String)
+    
 
-class CalendarDates(Base):
-    __tablename__ = "calendar_dates"
-    service_id = Column(String, primary_key=True, index=True)
+class Trips(Base):
+    __tablename__ = "trips"
+    route_id = Column(Integer, primary_key=True, index=True)
+    service_id = Column(String)
+    trip_id = Column(String)
+    trip_headsign = Column(String)
+    direction_id = Column(Integer)
+    block_id = Column(Integer)
+    shape_id = Column(String)
+    trip_id_event = Column(String)
     agency_id = Column(String)
-    date = Column(String)
-    exception_type = Column(Integer)
-    agency_id = Column(String)
+    
 #### end gtfs static models
 
 #### begin other models
@@ -132,3 +157,14 @@ class CanceledServices(Base):
     CostCenter = Column(String)
     blk_garage = Column(String)
     LastUpdateDate = Column(String)
+
+class User(Base):
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String)
+    email = Column(String, unique=True, index=True)
+    email_token = Column(String)
+    api_token = Column(String)
+    hashed_password = Column(String)
+    is_email_verified = Column(Boolean, default=False)
+    is_active = Column(Boolean, default=False)

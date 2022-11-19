@@ -8,7 +8,7 @@ context = ssl.SSLContext(ssl.PROTOCOL_TLS)
 def login_and_send_email(email_config,email_destination,payload):
         message = MIMEMultipart("alternative")
         message["Subject"] = payload["email_subject"]
-        message["From"] = "LA Metor API v2"
+        message["From"] = "LA Metro API v2"
         message["To"] = email_destination
         message.attach(MIMEText(payload["email_message_txt"], "plain"))
         message.attach(MIMEText(payload["email_message_html"], "html"))

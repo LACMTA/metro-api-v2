@@ -1,4 +1,18 @@
 import json
+import pandas as pd
+import numpy as np
+from geoalchemy2 import functions,shape
+from shapely.geometry import Point
+from shapely import geometry as geo
+class JsonReturn(dict):
+    def __str__(self):
+        # data = list(self.items())
+        # array = np.array(data)
+        # df = pd.DataFrame(array)
+        # return df.to_json(self)
+        return json.dumps(self)
+
+
 def trip_update_reformat(row):
     result_row = {}
     result_row['id'] = row.trip_id
@@ -25,13 +39,17 @@ def trip_update_reformat(row):
     if row.stop_time_json:
         clean_stop_time_json = row.stop_time_json.replace("'", '"')
         for stop_time in json.loads(clean_stop_time_json):
-            print(stop_time)
             this_stop_time = {}
             if stop_time['stop_sequence']:
                 this_stop_time['stopSequence'] = stop_time['stop_sequence']
             if stop_time['arrival']:
-                this_stop_time['arrival']['time'] = stop_time['arrival']
+                arrival = {}
+                arrival['time'] = stop_time['arrival']
+                this_stop_time['arrival'] = arrival
             if stop_time['departure']:
+                departure = {}
+                departure['time'] = stop_time['departure']
+                this_stop_time['departure'] = departure
                 this_stop_time['departure']['time'] = stop_time['departure']
             if stop_time['schedule_relationship']:
                 this_stop_time['scheduleRelationship'] = get_readable_schedule_relationship(stop_time['schedule_relationship'])
@@ -43,11 +61,16 @@ def trip_update_reformat(row):
     return result_row
 
 
-def vehicle_position_reformat(row):
+
+
+def vehicle_position_reformat(row,geojson=False):
         trip_info = {}
         vehicle_info = {}
         position_info = {}
 
+        geojson_row = {}
+        properties = {}
+        row.current_status = get_readable_status(row.current_status)
         if row.trip_id:
             trip_info['trip_id'] = row.trip_id
             del row.trip_id
@@ -75,11 +98,23 @@ def vehicle_position_reformat(row):
         if row.position_speed:
             position_info['speed'] = row.position_speed
             del row.position_speed
+        if row.geometry:
+            row.geometry = JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
 
+        if geojson == True:
+            geojson_row['type'] = 'Feature'
+            if row.geometry:
+                geojson_row['geometry'] = row.geometry
+            properties['trip'] = trip_info
+            properties['vehicle'] = vehicle_info
+            properties['position'] = position_info
+            properties['current_status'] = row.current_status
+            geojson_row['properties'] = properties
+            return geojson_row
         row.trip = trip_info
         row.vehicle = vehicle_info
         row.position = position_info
-        row.current_status = get_readable_status(row.current_status)
+
         return row
 
 def get_readable_status(status):

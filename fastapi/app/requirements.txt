@@ -2,7 +2,8 @@ fastapi
 pydantic
 starlette
 typing-extensions
-uvicorn
+uvicorn[standard]
+gunicorn
 requests
 python-dotenv
 pytz
@@ -18,3 +19,7 @@ fastapi-restful[tasks]
 pandas
 protobuf==3.19.6
 google
+shapely
+pandas
+# fastapi-cache2[redis]
+# aioredis
