@@ -157,6 +157,7 @@ class VehiclePositions(BaseModel):
     trip_id: str
     trip_start_date: str
     trip_route_id: str
+    route_code: str
 
     position_latitude: float
     position_longitude: float

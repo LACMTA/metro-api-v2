@@ -96,6 +96,31 @@ def get_agency_id(service):
     elif (service == 'rail'):
         return 'LACMTA_Rail'
 
+
+def convert_rail_route_code_to_letter(route_code):
+    if route_code == '801':
+        return 'A Line'
+    if route_code == '802':
+        return 'B Line'
+    if route_code == '803':
+        return 'C Line'
+    if route_code == '804':
+        return 'L Line'
+    if route_code == '805':
+        return 'D Line'
+    if route_code == '806':
+        return 'E Line'
+    if route_code == '807':
+        return 'K Line'
+
+def get_route_code_from_trip_route_id(trip_id,agency_id):
+    val = ""
+    if agency_id == 'LACMTA_Rail' and trip_id.startswith('8'):
+        val = convert_rail_route_code_to_letter(trip_id)
+    else:
+        val = str(trip_id).split('-')[0]
+    return val
+
 def update_gtfs_realtime_data():
     process_start = timeit.default_timer()
     connect_to_db()
@@ -164,6 +189,7 @@ def update_gtfs_realtime_data():
                     'trip_id': entity.vehicle.trip.trip_id,
                     'trip_start_date': entity.vehicle.trip.start_date,
                     'trip_route_id': entity.vehicle.trip.route_id,
+                    'route_code': get_route_code_from_trip_route_id(entity.vehicle.trip.route_id,agency),
                     'position_latitude': entity.vehicle.position.latitude,
                     'position_longitude': entity.vehicle.position.longitude,
                     'position_bearing': entity.vehicle.position.bearing,

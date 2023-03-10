@@ -102,6 +102,7 @@ class TripUpdatesFieldsEnum(str, Enum):
 class VehiclePositionsFieldsEnum(str, Enum):
     vehicle_id = "vehicle_id"
     trip_route_id = "trip_route_id"
+    route_code = "route_code"
     stop_id = "stop_id"
 class DayTypesEnum(str, Enum):
     weekday = "weekday"
@@ -425,7 +426,7 @@ async def get_time():
 
 # @app.get("/agencies/")
 # async def root():
-#     return {"Metro API Version": "2.1.18"}
+#     return {"Metro API Version": "2.1.19"}
 
 # Frontend Routing
 
