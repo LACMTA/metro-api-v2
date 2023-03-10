@@ -18,41 +18,12 @@
               desktop:grid-col-12
               usa-prose usa-layout-docs
             " id="main-content">
-            <h1>Metro API v{{api_version}}</h1>
-            {% if update_time != None %}
-              <div class="usa-alert usa-alert--info usa-alert--slim">
-                <div class="usa-alert__body">
-                  <p class="usa-alert__text">
-                    <b>Last updated: {{update_time}}</b>
-                    <span id="last_updated_label"></span>
-                  </p>
-                </div>
-              </div>
-            {% endif %}
-
-  
+            <h1>API Information</h1>  
             <p class="usa-intro">
-              Welcome to the Metro API.  This API currently provides access to the following data:
+             
             </p>
             <ul>
-              <li>Real Time System Data
-                <ul>
-                  <li>GTFS-rt Trip Updates</li>  (updated every minute)
-                  <li>GTFS-rt Vehicle Positions</li> (updated every minute)
-                  <li>Canceled Bus Service</li> (updated every 15 minutes)
-                </ul>
-              </li>
-              <li>Static System Data
-                <ul>
-                  <li>Weekly calendar_dates.txt Updates</li> (updated weekly)
-                  <li>GTFS-Static data Updates</li> (rail updated nightly/bus updated quarterly)
-                </ul>
-              </li>
-              <li>Other Data
-                <ul>
-                  <li>Go Pass Schools</li> (updated nightly)
-                </ul>
-              </li>
+
               </ul>
             
             <h2>Conventions</h2>

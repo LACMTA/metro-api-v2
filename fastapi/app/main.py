@@ -175,6 +175,15 @@ def standardize_string(input_string):
 #  Begin Routes
 ####################
 
+
+@app.get("/info", response_class=HTMLResponse,include_in_schema=False)
+async def show_docs(request: Request, topic: str = 'index'):
+    if topic == 'index':
+        return templates.TemplateResponse("home.html", {"request": request})
+    return templates.TemplateResponse("item.html", {"request": request, "topic": topic})
+
+
+
 @app.get("/{agency_id}/trip_updates/all",tags=["Real-Time data"])
 # @cache()
 async def all_trip_updates_updates(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
