@@ -92,6 +92,9 @@ def vehicle_position_reformat(row,geojson=False):
         if row.position_bearing:
             position_info['bearing'] = row.position_bearing
             del row.position_bearing
+        if row.timestamp:
+            position_info['timestamp'] = row.timestamp
+            del row.timestamp
         if row.position_speed:
             position_info['speed'] = row.position_speed
             del row.position_speed
