@@ -1,6 +1,0 @@
-docker-compose.yml
-.env
-.envrc
-sandbox/
-**/secrets.py
-**/.env
