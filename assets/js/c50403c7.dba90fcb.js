@@ -1,1 +1,0 @@
-"use strict";(self.webpackChunkdocumentation=self.webpackChunkdocumentation||[]).push([[5656],{16911:a=>{a.exports=JSON.parse('{"label":"hola","permalink":"/metro-api-v2/blog/tags/hola","allTagsPath":"/metro-api-v2/blog/tags","count":1}')}}]);

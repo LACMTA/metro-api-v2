@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocumentation=self.webpackChunkdocumentation||[]).push([[7921],{94036:a=>{a.exports=JSON.parse('{"label":"docusaurus","permalink":"/metro-api-v2/blog/tags/docusaurus","allTagsPath":"/metro-api-v2/blog/tags","count":1}')}}]);
