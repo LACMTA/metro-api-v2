@@ -2,7 +2,7 @@ import os
 
 try:
     current_environment = os.environ.get('RUNNING_ENV')
-    if current_environment != 'prod':
+    if 'local' in current_environment:
         from secrets import load_secrets
         load_secrets()
 except ModuleNotFoundError:
