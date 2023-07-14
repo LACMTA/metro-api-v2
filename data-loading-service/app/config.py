@@ -4,7 +4,7 @@ import logging
 try:
     if os.path.isfile('app/secrets.py'):
         print('Loading secrets from secrets.py')
-        from .secrets import load_secrets
+        from secrets import load_secrets
         load_secrets()
 except ModuleNotFoundError:
     logging.info('No secrets.py found, loading from environment variables')

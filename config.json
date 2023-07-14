@@ -1,0 +1,12 @@
+{
+    "agencies": [
+      {
+        "agency_key": "LACMTA_Rail",
+        "path": "./gtfs_rail.zip"
+      }],
+    "bufferSizeMeters": 800,
+    "coordinatePrecision": 5,
+    "outputType": "agency",
+    "outputFormat": "stops",
+    "zipOutput": false
+  }
