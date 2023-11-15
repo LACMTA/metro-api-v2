@@ -24,15 +24,14 @@ shapely
 polyline
 websockets
 redis_om
-# fastapi-redis-cache
-# fastapi-cache2[redis]
-aioredis
+fastapi-redis-cache
+fastapi-cache2[redis]
 asyncio
-asyncpg
+aioredis
 sqlalchemy[asyncio]
 versiontag
 gitpython
 fastapi-pagination
-prometheus-fastapi-instrumentator
-prometheus_client
 geojson
+pytest
+asyncpg

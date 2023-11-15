@@ -4,9 +4,9 @@ import logging
 import git
 
 try:
-    if os.path.isfile('app/secrets.py'):
+    if os.path.isfile('app/app_secrets.py'):
         print('Loading secrets from secrets.py')
-        from .secrets import load_secrets
+        from .app_secrets import load_secrets
         load_secrets()
 except ModuleNotFoundError:
     logging.info('No secrets.py found, loading from environment variables')
@@ -44,7 +44,7 @@ def get_version_tag_from_online_github_repo():
 
 class Config:
     BASE_URL = "https://api.metro.net"
-    REDIS_URL = "redis://redis:6379"
+    REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
     TARGET_DB_SCHEMA = "metro_api"
     API_DB_URI = os.environ.get('API_DB_URI')
     SECRET_KEY = os.environ.get('HASH_KEY')

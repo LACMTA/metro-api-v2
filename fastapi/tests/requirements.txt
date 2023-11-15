@@ -1,0 +1,6 @@
+locust
+pytest
+fastapi
+httpx
+sqlalchemy
+GeoAlchemy2

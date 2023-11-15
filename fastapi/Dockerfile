@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.3
-FROM python:3.9-slim-buster
+FROM lacmta/geodb-base
 
 WORKDIR /app
 
@@ -35,6 +35,5 @@ COPY . .
 
 # OLD UVICORN COMMAND 11/17/2022
 # CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
-CMD ["gunicorn", "app.main:app", "--workers", "2","--worker-class","uvicorn.workers.UvicornWorker","--bind","0.0.0.0:80","--timeout","5000","--keep-alive","2000"]
-
+CMD ["gunicorn", "app.main:app", "--workers", "2", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:80", "--timeout", "120", "--keep-alive", "5"]
 EXPOSE 80

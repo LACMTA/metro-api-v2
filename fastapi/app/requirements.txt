@@ -24,13 +24,14 @@ pandas
 polyline
 websockets
 fastapi-cache2[redis]
-aioredis
+pymemcache
 asyncio
 asyncpg
+aioredis
 sqlalchemy[asyncio]
 versiontag
 gitpython
 fastapi-pagination
-prometheus-fastapi-instrumentator
 geojson
-prometheus_client
+pytest
+pickle
