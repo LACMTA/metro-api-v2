@@ -732,7 +732,6 @@ async def startup_event():
     uvicorn_error_logger.addFilter(LogFilter())
     logger.addFilter(LogFilter())
 
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
