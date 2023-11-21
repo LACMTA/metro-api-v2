@@ -2,6 +2,8 @@
 from distutils.command.config import config
 from typing import Union, List, Dict, Optional
 from versiontag import get_version
+import traceback
+import sys
 
 import http
 import json
@@ -16,7 +18,7 @@ import pytz
 
 from datetime import timedelta, date, datetime
 
-from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query, WebSocket,WebSocketDisconnect
 from fastapi import Path as FastAPIPath
 # from fastapi import FastAPI, Request, Response, Depends, HTTPException, status
 from fastapi.encoders import jsonable_encoder
@@ -396,8 +398,48 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
+@app.websocket("/ws/{agency_id}/vehicle_positions")
+async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: AsyncSession = Depends(get_async_db)):
+    await websocket.accept()
+    try:
+        while True:
+            try:
+                data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
+                if data is not None:
+                    await websocket.send_json(data)
+                await asyncio.sleep(10)
+                # Send a ping every 10 seconds
+                await websocket.send_json({"type": "ping"})
+            except asyncio.TimeoutError:
+                raise HTTPException(status_code=408, detail="Request timed out")
+    except WebSocketDisconnect:
+        # Handle the WebSocket disconnect event
+        print("WebSocket disconnected")
 
 
+@app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
+async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, async_db: AsyncSession = Depends(get_async_db)):
+    await websocket.accept()
+    model = models.VehiclePositions
+    ids = ids.split(',')
+    try:
+        while True:
+            data = {}
+            for id in ids:
+                try:
+                    result = await asyncio.wait_for(crud.get_data_async(async_db, model, agency_id.value, field.value, id), timeout=120)
+                    if result is not None:
+                        data[id] = result
+                except asyncio.TimeoutError:
+                    raise HTTPException(status_code=408, detail="Request timed out")
+            if data:
+                await websocket.send_json(data)
+            await asyncio.sleep(5)
+            # Send a ping every 5 seconds
+            await websocket.send_json({"type": "ping"})
+    except WebSocketDisconnect:
+        # Handle the WebSocket disconnect event
+        print("WebSocket disconnected")
 
 ##### todo: Needs to be tested
 
@@ -738,32 +780,36 @@ async def get_all_routes():
 
 @app.on_event("startup")
 async def startup_event():
-    redis_pool = await aioredis.from_url(Config.REDIS_URL)
-    redis = RedisBackend(redis_pool)
-    FastAPICache.init(backend=redis, prefix="fastapi-cache")
-    uvicorn_access_logger = logging.getLogger("uvicorn.access")
-    uvicorn_error_logger = logging.getLogger("uvicorn.error")
-    logger = logging.getLogger("uvicorn.app")
-    logzio_formatter = logging.Formatter("%(message)s")
-    logzio_uvicorn_access_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.access', 5, Config.LOGZIO_URL)
-    logzio_uvicorn_access_handler.setLevel(logging.INFO)
-    logzio_uvicorn_access_handler.setFormatter(logzio_formatter)
+    try:
+        redis_pool = await aioredis.from_url(Config.REDIS_URL)
+        redis = RedisBackend(redis_pool)
+        FastAPICache.init(backend=redis, prefix="fastapi-cache")
+        uvicorn_access_logger = logging.getLogger("uvicorn.access")
+        uvicorn_error_logger = logging.getLogger("uvicorn.error")
+        logger = logging.getLogger("uvicorn.app")
+        logzio_formatter = logging.Formatter("%(message)s")
+        logzio_uvicorn_access_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.access', 5, Config.LOGZIO_URL)
+        logzio_uvicorn_access_handler.setLevel(logging.INFO)
+        logzio_uvicorn_access_handler.setFormatter(logzio_formatter)
 
-    logzio_uvicorn_error_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.error', 5, Config.LOGZIO_URL)
-    logzio_uvicorn_error_handler.setLevel(logging.INFO)
-    logzio_uvicorn_error_handler.setFormatter(logzio_formatter)
+        logzio_uvicorn_error_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'uvicorn.error', 5, Config.LOGZIO_URL)
+        logzio_uvicorn_error_handler.setLevel(logging.INFO)
+        logzio_uvicorn_error_handler.setFormatter(logzio_formatter)
 
-    logzio_app_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'fastapi.app', 5, Config.LOGZIO_URL)
-    logzio_app_handler.setLevel(logging.INFO)
-    logzio_app_handler.setFormatter(logzio_formatter)
+        logzio_app_handler = LogzioHandler(Config.LOGZIO_TOKEN, 'fastapi.app', 5, Config.LOGZIO_URL)
+        logzio_app_handler.setLevel(logging.INFO)
+        logzio_app_handler.setFormatter(logzio_formatter)
 
-    uvicorn_access_logger.addHandler(logzio_uvicorn_access_handler)
-    uvicorn_error_logger.addHandler(logzio_uvicorn_error_handler)
-    logger.addHandler(logzio_app_handler)
+        uvicorn_access_logger.addHandler(logzio_uvicorn_access_handler)
+        uvicorn_error_logger.addHandler(logzio_uvicorn_error_handler)
+        logger.addHandler(logzio_app_handler)
 
-    uvicorn_access_logger.addFilter(LogFilter())
-    uvicorn_error_logger.addFilter(LogFilter())
-    logger.addFilter(LogFilter())
+        uvicorn_access_logger.addFilter(LogFilter())
+        uvicorn_error_logger.addFilter(LogFilter())
+        logger.addFilter(LogFilter())
+    except:
+        exc_type, exc_value, exc_traceback = sys.exc_info()
+        traceback.print_exception(exc_type, exc_value, exc_traceback, file=sys.stderr)
 
 app.add_middleware(
     CORSMiddleware,
