@@ -4,7 +4,6 @@ from typing import Union, List, Dict, Optional
 from versiontag import get_version
 import traceback
 import sys
-
 import http
 import json
 import requests
@@ -14,6 +13,7 @@ import asyncio
 import aioredis
 
 import pytz
+import time
 
 
 from datetime import timedelta, date, datetime
@@ -44,13 +44,14 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import PlainTextResponse
 
+from starlette.requests import Request
+from starlette.responses import Response
+
+
 from fastapi_cache import FastAPICache
 from fastapi_cache.backends.redis import RedisBackend
 from fastapi_cache.decorator import cache
 
-
-from starlette.requests import Request
-from starlette.responses import Response
 
 # from redis import asyncio as aioredis
 from enum import Enum
@@ -79,7 +80,7 @@ from logzio.handler import LogzioHandler
 import logging
 import typing as t
 
-
+SERVER_OVERLOAD_THRESHOLD = 1.2
 ### Pagination Parameter Options (deafult pagination count, default starting page, max_limit)
 Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
@@ -233,6 +234,28 @@ class LogFilter(logging.Filter):
         return True
 
 
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, limit=100, interval=60):
+        super().__init__(app)
+        self.limit = limit
+        self.interval = interval
+        self.requests = defaultdict(list)
+
+    async def dispatch(self, request: Request, call_next):
+        client_ip = request.client.host
+        request_times = self.requests[client_ip]
+        request_times.append(time.time())
+
+        # Remove requests older than the rate limit interval
+        while request_times and request_times[0] < time.time() - self.interval:
+            request_times.pop(0)
+
+        if len(request_times) > self.limit:
+            raise HTTPException(status_code=429, detail="Too Many Requests")
+
+        response = await call_next(request)
+        return response
+
 tags_metadata = [
     {"name": "Real-Time data", "description": "Includes GTFS-RT data for Metro Rail and Metro Bus."},
     {"name": "Canceled Service Data", "description": "Canceled service data for Metro Bus and Metro Rail."},
@@ -246,6 +269,8 @@ inspector = inspect(engine)
 from sqlalchemy import Table
 
 app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
+app.add_middleware(RateLimitMiddleware, limit=100, interval=60)
+
 # db = connect(host=''ort=0, timeout=None, source_address=None)
 
 
@@ -435,16 +460,30 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
+
 @app.websocket("/ws/{agency_id}/vehicle_positions")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: AsyncSession = Depends(get_async_db)):
     await websocket.accept()
     try:
         while True:
+            # Check server load
+            load1, load5, load15 = os.getloadavg()
+            if load1 > SERVER_OVERLOAD_THRESHOLD:
+                await websocket.send_json({"type": "server_overload"})
+                await websocket.close()
+                return
+
             try:
                 data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
                 if data is not None:
-                    await websocket.send_json(data)
+                    # Publish the received data to a Redis channel
+                    await redis.publish('live_vehicle_positions', data)
                 await asyncio.sleep(10)
+                # Subscribe to the Redis channel and send any received messages to the WebSocket client
+                ch = await redis.subscribe('live_vehicle_positions')
+                while await ch.wait_message():
+                    message = await ch.get()
+                    await websocket.send_json(message)
                 # Send a ping every 10 seconds
                 await websocket.send_json({"type": "ping"})
             except asyncio.TimeoutError:
@@ -452,7 +491,6 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: Asy
     except WebSocketDisconnect:
         # Handle the WebSocket disconnect event
         print("WebSocket disconnected")
-
 
 @app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
 async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, async_db: AsyncSession = Depends(get_async_db)):
@@ -467,13 +505,19 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
                     result = await asyncio.wait_for(crud.get_data_async(async_db, model, agency_id.value, field.value, id), timeout=120)
                     if result is not None:
                         data[id] = result
+                        # Publish the received data to a Redis channel
+                        await redis.publish('live_vehicle_positions_by_ids', data)
                 except asyncio.TimeoutError:
                     raise HTTPException(status_code=408, detail="Request timed out")
             if data:
-                await websocket.send_json(data)
-            await asyncio.sleep(5)
-            # Send a ping every 5 seconds
-            await websocket.send_json({"type": "ping"})
+                await asyncio.sleep(5)
+                # Subscribe to the Redis channel and send any received messages to the WebSocket client
+                ch = await redis.subscribe('live_vehicle_positions_by_ids')
+                while await ch.wait_message():
+                    message = await ch.get()
+                    await websocket.send_json(message)
+                # Send a ping every 5 seconds
+                await websocket.send_json({"type": "ping"})
     except WebSocketDisconnect:
         # Handle the WebSocket disconnect event
         print("WebSocket disconnected")
@@ -483,7 +527,7 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
 @cache(expire=REALTIME_UDPATE_INTERVAL)
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
-    result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
+    result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
     return result
 
 @app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id?}", tags=["Real-Time data"])
@@ -508,26 +552,14 @@ async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Option
     return {"message": "No vehicle_id provided"}
 
 
-
 @app.get("/{agency_id}/trip_detail/route/{route_code?}", tags=["Real-Time data"])
 @cache(expire=REALTIME_UDPATE_INTERVAL)
-async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
-    if operation == OperationEnum.ALL:
-        result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
+async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional[OperationEnum] = None, geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
+    if route_code == OperationEnum.ALL:
+        result = await crud.get_all_data_async(async_db, models.VehiclePositions, route_code.value)
         return result
-    if route_code:
-        multiple_values = route_code.split(',')
-        if len(multiple_values) > 1:
-            result_array = []
-            for value in multiple_values:
-                temp_result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', value)
-                if len(temp_result) == 0:
-                    temp_result = { "message": "route'" + route_code + "' has no live trips'" }
-                    return temp_result
-                result_array.append(temp_result)
-            return result_array
-        else:
-            result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', route_code)
+    elif route_code:
+        result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', route_code.value)
         return result
     return {"message": "No route_code provided"}
 
