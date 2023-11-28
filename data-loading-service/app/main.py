@@ -9,14 +9,18 @@ import time
 import pandas as pd
 
 import crython
-# import schedule
-@crython.job(second='*/'+str(main_helper.set_interval_time())+'')
-def gtfs_rt_scheduler():
-    try:
-        gtfs_rt_helper.update_gtfs_realtime_data()
-    except Exception as e:
-        print('Error updating GTFS-RT data: ' + str(e))
 
+lock = threading.Lock()
+
+@crython.job(second='*/15')
+def gtfs_rt_scheduler():
+    with lock:
+        if lock.locked():
+            try:
+                gtfs_rt_helper.update_gtfs_realtime_data()
+            except Exception as e:
+                print('Error updating GTFS-RT data: ' + str(e))
+                
 @crython.job(expr='@daily')
 def go_pass_data_scheduler():
     try:
