@@ -1,17 +1,12 @@
 from calendar import calendar
 import pandas as pd
-import json
 from pathlib import Path
 from sqlalchemy import create_engine
-# from sqlalchemy.orm import Session,sessionmaker
 from config import Config
 import geopandas as gpd
 from .database_connector import *
 import requests
 from io import StringIO
-# from .utils.log_helper import *
-# engine = create_engine(Config.API_DB_URI, echo=False,executemany_mode="values")
-# Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 CALENDAR_DATES_URL_BUS = 'https://gitlab.com/LACMTA/gtfs_bus/-/raw/weekly-updated-service/calendar_dates.txt'
 # CALENDAR_DATES_URL_RAIL = 'https://gitlab.com/LACMTA/gtfs_rail/-/raw/weekly-updated-service/calendar_dates.txt'
