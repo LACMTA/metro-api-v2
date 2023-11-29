@@ -12,14 +12,20 @@ import crython
 
 lock = threading.Lock()
 
+def retry_on_failure(task, retries=3, delay=15):
+    for i in range(retries):
+        try:
+            task()
+            break
+        except Exception as e:
+            print(f'Error on attempt {i+1}: {str(e)}')
+            time.sleep(delay)
+
 @crython.job(second='*/15')
 def gtfs_rt_scheduler():
-    with lock:
-        if lock.locked():
-            try:
-                gtfs_rt_helper.update_gtfs_realtime_data()
-            except Exception as e:
-                print('Error updating GTFS-RT data: ' + str(e))
+    if not lock.locked():
+        with lock:
+            retry_on_failure(gtfs_rt_helper.update_gtfs_realtime_data)
 
 @crython.job(expr='@daily')
 def go_pass_data_scheduler():

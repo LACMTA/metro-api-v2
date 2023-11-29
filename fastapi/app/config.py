@@ -59,15 +59,13 @@ def get_pgbouncer_uri(original_uri):
     return pgbouncer_uri
 
 class Config:
-    BASE_URL = "https://api.metro.net"
+    BASE_URL = os.environ.get('BASE_URL')
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
-    TARGET_DB_SCHEMA = "metro_api"
+    TARGET_DB_SCHEMA = os.environ.get('TARGET_DB_SCHEMA')
     API_DB_URI = get_pgbouncer_uri(os.environ.get('API_DB_URI'))
     SECRET_KEY = os.environ.get('HASH_KEY')
     ALGORITHM = os.environ.get('HASHING_ALGORITHM')
     ACCESS_TOKEN_EXPIRE_MINUTES  = 30
-    SWIFTLY_AUTH_KEY_BUS = os.environ.get('SWIFTLY_AUTH_KEY_BUS')
-    SWIFTLY_AUTH_KEY_RAIL = os.environ.get('SWIFTLY_AUTH_KEY_RAIL')
     SERVER = os.environ.get('FTP_SERVER')
     USERNAME = os.environ.get('FTP_USERNAME')
     PASS = os.environ.get('FTP_PASS')

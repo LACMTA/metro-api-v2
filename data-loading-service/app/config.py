@@ -46,7 +46,7 @@ def set_db_schema():
 
 
 class Config:
-    BASE_URL = "https://api.metro.net"
+    BASE_URL = os.environ.get('BASE_URL')
     TARGET_DB_SCHEMA = set_db_schema()
     API_DB_URI = os.environ.get('API_DB_URI')
     SECRET_KEY = os.environ.get('HASH_KEY')
@@ -66,12 +66,5 @@ class Config:
     LOGZIO_TOKEN = os.environ.get('LOGZIO_TOKEN')
     LOGZIO_URL = os.environ.get('LOGZIO_URL')
     RUNNING_ENV = os.environ.get('RUNNING_ENV')
-    MAIL_USERNAME = os.environ.get('MAIL_USERNAME')
-    MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD')
-    MAIL_FROM = os.environ.get('MAIL_FROM')
-    MAIL_PORT = os.environ.get('MAIL_PORT')
-    MAIL_SERVER = os.environ.get('MAIL_SERVER')
-    MAIL_TLS = "True"
-    MAIL_SSL = "False"
     USE_CREDENTIALS = "True"
     VALIDATE_CERTS = "True"
