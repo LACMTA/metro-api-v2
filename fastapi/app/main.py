@@ -274,10 +274,13 @@ from shapely import wkt
 def to_geojson(data):
     features = []
     for item in data:
+        # Check if trip_id is None before trying to access it
+        if item.trip_id is None:
+            continue  # skip this item
         # Create a Point from the 'geometry' coordinates
-        geometry = Point(item['geometry']['coordinates'])
+        geometry = Point((item.geometry.longitude, item.geometry.latitude))
         # Exclude the 'geometry' key from the properties
-        properties = {key: item[key] for key in item if key != 'geometry'}
+        properties = {key: getattr(item, key) for key in dir(item) if not key.startswith('_') and key != 'geometry'}
         feature = Feature(geometry=geometry, properties=properties)
         features.append(feature)
     feature_collection = FeatureCollection(features)
