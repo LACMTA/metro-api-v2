@@ -47,7 +47,7 @@ def set_db_schema():
 
 class Config:
     BASE_URL = os.environ.get('BASE_URL')
-    TARGET_DB_SCHEMA = set_db_schema()
+    TARGET_DB_SCHEMA = 'metro_api'
     API_DB_URI = os.environ.get('API_DB_URI')
     SECRET_KEY = os.environ.get('HASH_KEY')
     ALGORITHM = os.environ.get('HASHING_ALGORITHM')
