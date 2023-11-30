@@ -274,15 +274,19 @@ from shapely import wkt
 def to_geojson(data):
     features = []
     for item in data:
-        # Check if 'trip_id' is in the dictionary before trying to access it
-        if 'trip_id' not in item or item['trip_id'] is None:
-            continue  # skip this item
-        # Create a Point from the 'geometry' coordinates
-        geometry = Point(item['geometry']['coordinates'])
-        # Exclude the 'geometry' key from the properties
-        properties = {key: value for key, value in item.items() if key != 'geometry'}
-        feature = Feature(geometry=geometry, properties=properties)
-        features.append(feature)
+        try:
+            # Check if 'trip_id' is in the dictionary before trying to access it
+            if item.get('trip_id') is None:
+                continue  # skip this item
+            # Create a Point from the 'geometry' coordinates
+            geometry = Point(item['geometry']['coordinates'])
+            # Exclude the 'geometry' key from the properties
+            properties = {key: value for key, value in item.items() if key != 'geometry'}
+            feature = Feature(geometry=geometry, properties=properties)
+            features.append(feature)
+        except Exception as e:
+            print(f"Error processing item {item}: {e}")
+            continue
     feature_collection = FeatureCollection(features)
     # Add metadata
     feature_collection['properties'] = {
