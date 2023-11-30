@@ -274,13 +274,13 @@ from shapely import wkt
 def to_geojson(data):
     features = []
     for item in data:
-        # Check if trip_id is None before trying to access it
-        if item.trip_id is None:
+        # Check if 'trip_id' is in the dictionary before trying to access it
+        if 'trip_id' not in item or item['trip_id'] is None:
             continue  # skip this item
         # Create a Point from the 'geometry' coordinates
-        geometry = Point((item.geometry.longitude, item.geometry.latitude))
+        geometry = Point(item['geometry']['coordinates'])
         # Exclude the 'geometry' key from the properties
-        properties = {key: getattr(item, key) for key in dir(item) if not key.startswith('_') and key != 'geometry'}
+        properties = {key: value for key, value in item.items() if key != 'geometry'}
         feature = Feature(geometry=geometry, properties=properties)
         features.append(feature)
     feature_collection = FeatureCollection(features)
@@ -290,7 +290,6 @@ def to_geojson(data):
         'timestamp': datetime.now().isoformat()
     }
     return feature_collection
-
 # code from https://fastapi-restful.netlify.app/user-guide/repeated-tasks/
 
 def csv_to_json(csvFilePath, jsonFilePath):
