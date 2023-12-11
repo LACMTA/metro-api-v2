@@ -33,17 +33,17 @@ class WebsiteUser(HttpUser):
     def load_vehicle_positions_rail(self):
         self.client.get("/LACMTA_Rail/vehicle_positions?format=geojson")
 
-    @task
-    def load_trip_updates_for_801(self):
-        self.client.get("/LACMTA_Rail/trip_updates/route_id/801")
+    # @task
+    # def load_trip_updates_for_801(self):
+    #     self.client.get("/LACMTA_Rail/trip_updates/route_id/801")
 
-    @task
-    def load_trip_updates_all_bus(self):
-        self.client.get("/LACMTA/trip_updates")
+    # @task
+    # def load_trip_updates_all_bus(self):
+    #     self.client.get("/LACMTA/trip_updates")
 
-    @task
-    def load_trip_updates_all_rail(self):
-        self.client.get("/LACMTA_Rail/trip_updates")
+    # @task
+    # def load_trip_updates_all_rail(self):
+    #     self.client.get("/LACMTA_Rail/trip_updates")
         
 # @task
 # def load_agency(self):
