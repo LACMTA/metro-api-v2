@@ -129,16 +129,12 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
         unique_keys = [row.__dict__ for row in this_data]
     return unique_keys
 
-
-
-
 ####
 async def get_vehicle_data_async(db: AsyncSession, agency_id: str, vehicle_id: str):
     result = await db.execute(select(models.VehiclePositions).where(models.VehiclePositions.agency_id == agency_id,models.VehiclePositions.vehicle_id == vehicle_id))
     data = result.scalars().one_or_none()
     return data
 
-import pickle
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
     key = f"{model.__name__}:{agency_id}:{field_name}:{field_value}"
@@ -481,7 +477,15 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session: AsyncSe
 
 
 async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code: str, geojson:bool,agency_id:str):
-    the_query = await session.execute(select(models.VehiclePositions).where(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).order_by(models.VehiclePositions.route_code))
+    cache_key = f'vehicle_positions_trip_data:{agency_id}:{route_code}:{geojson}'
+    if redis_connection is None:
+        initialize_redis()
+    cached_result = await redis_connection.get(cache_key)
+    if cached_result is not None:
+        yield pickle.loads(cached_result)
+
+    the_query = session.execute(select(models.VehiclePositions).where(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).order_by(models.VehiclePositions.route_code))
+    result = the_query.scalars().all()
     if geojson == True:
         this_json = {}
         count = 0
@@ -517,6 +521,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(sessio
         this_json['metadata'] = {'title': 'Vehicle Positions'}
         this_json['type'] = "FeatureCollection"
         this_json['features'] = features
+        await redis_connection.set(cache_key, pickle.dumps(this_json))
         yield this_json
     else:
         result = []
@@ -543,6 +548,7 @@ async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(sessio
             message_object = [{'message': 'No vehicle data for this vehicle id: ' + str(route_code)}]
             yield message_object
         else:
+            await redis_connection.set(cache_key, pickle.dumps(result))
             yield result
 
 def get_distinct_stop_ids(the_query):
