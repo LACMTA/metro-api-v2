@@ -510,7 +510,9 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
 
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
 async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
-    result = await crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value)
+    result = []
+    async for item in crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value):
+        result.append(item)
     return result
 
 @app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id?}", tags=["Real-Time data"])
