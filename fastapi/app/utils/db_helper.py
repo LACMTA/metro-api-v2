@@ -174,69 +174,54 @@ def vehicle_position_reformat_for_trip_details(row,geojson=False):
         # row.trip = trip_info
         row.position = position_info
         return row
+def vehicle_position_reformat_for_trip_details_for_async(row, geojson=False):
+    trip_info = {
+        'trip_assigned': hasattr(row, 'trip_id'),
+        'trip_id': getattr(row, 'trip_id', None),
+        'trip_start_date': getattr(row, 'trip_start_date', None),
+        'current_stop_sequence': getattr(row, 'current_stop_sequence', None),
+        'trip_route_id': getattr(row, 'trip_route_id', None),
+        'stop_id': getattr(row, 'stop_id', None),
+    }
 
-def vehicle_position_reformat_for_trip_details_for_async(row,geojson=False):
-        new_row = {}
-        trip_info = {}
-        position_info = {}
-        geojson_row = {}
-        properties = {}
-        if hasattr(row, 'current_status'):
-            new_row['current_status'] = get_readable_status(row.current_status)
-        trip_info['trip_assigned'] = False
-        
-        if hasattr(row, 'trip_id'):
-            trip_info['trip_assigned'] = True
-            trip_info['trip_id'] = row.trip_id
-            trip_info['trip_start_date'] = row.trip_start_date
-            trip_info['current_stop_sequence'] = row.current_stop_sequence
-            # trip_info['direction_id'] = row.direction_id
+    position_info = {
+        'timestamp': getattr(row, 'timestamp', None),
+        'latitude': getattr(row, 'position_latitude', None),
+        'longitude': getattr(row, 'position_longitude', None),
+        'position_bearing': getattr(row, 'position_bearing', None),
+    }
 
-        if row.trip_route_id:
-            trip_info['trip_route_id'] = row.trip_route_id 
-        if row.vehicle_id:
-            new_row['vehicle_id'] = row.vehicle_id
-        if row.stop_id:
-            trip_info['stop_id'] = row.stop_id
-        if row.timestamp:
-            position_info['timestamp'] = row.timestamp
-        if row.position_latitude:
-            position_info['latitude'] = row.position_latitude
-        if row.position_longitude:
-            position_info['longitude'] = row.position_longitude
-        if row.position_bearing:
-            position_info['position_bearing'] = row.position_bearing
-        if row.position_speed:
-            new_row['position_speed'] = row.position_speed
-        if row.stop_id:
-            new_row['stop_id'] = row.stop_id
-        if row.geometry:
-            try:
-                new_row['geometry'] = JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
-            except:
-                new_row['geometry'] = [row.position_longitude,row.position_latitude]
+    new_row = {
+        'current_status': get_readable_status(row.current_status) if hasattr(row, 'current_status') else None,
+        'vehicle_id': getattr(row, 'vehicle_id', None),
+        'position_speed': getattr(row, 'position_speed', None),
+        'stop_id': getattr(row, 'stop_id', None),
+        'trip': trip_info,
+        'position': position_info,
+    }
 
-        if geojson == True:
-            geojson_row['type'] = 'Feature'
-            if row.geometry:
-                geojson_row['geometry'] = JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
-                geojson_row['lineString'] = convert_geometry_to_line_string(row.geometry)
-            if hasattr(row, 'trip_id'):
-                properties['trip'] = trip_info
-                properties['trip']['trip_id'] = trip_info['trip_id']
-                properties['trip']['current_stop_sequence'] = trip_info['current_stop_sequence']
-                properties['trip']['vehicle_id'] = new_row['vehicle_id']
+    if row.geometry:
+        try:
+            new_row['geometry'] = JsonReturn(geo.mapping(shape.to_shape(row.geometry)))
+        except:
+            new_row['geometry'] = [row.position_longitude, row.position_latitude]
 
-            geojson_row['properties'] = properties
-            if hasattr(new_row, 'stop_id'):
-                geojson_row['properties']['stop_id'] = new_row.stop_id
-            properties['position'] = position_info
-            properties['current_status'] = new_row['current_status']
-            geojson_row['properties']['trip_assigned'] = trip_info['trip_assigned']
-            return geojson_row
-        new_row['trip'] = trip_info
-        new_row['position'] = position_info
-        return new_row
+    if geojson:
+        geojson_row = {
+            'type': 'Feature',
+            'geometry': new_row.get('geometry'),
+            'lineString': convert_geometry_to_line_string(row.geometry) if row.geometry else None,
+            'properties': {
+                'trip': trip_info,
+                'stop_id': new_row.get('stop_id'),
+                'position': position_info,
+                'current_status': new_row.get('current_status'),
+                'trip_assigned': trip_info['trip_assigned'],
+            }
+        }
+        return geojson_row
+
+    return new_row
 
 def upcoming_stop_time_reformat_for_async(stop_time_update):
     if stop_time_update:
