@@ -1,12 +1,16 @@
 import polyline
 import ast 
+import pickle
+
 from turtle import position
 from typing import Type, Optional
 from datetime import datetime,timedelta
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.future import select
 
-
+from sqlalchemy import and_, inspect
+from sqlalchemy.orm import joinedload
+from sqlalchemy import exists
 from sqlalchemy.sql import text
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -40,6 +44,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 import aioredis
 import pickle
 import time
+import logging
 
 from sqlalchemy import select
 
@@ -130,10 +135,6 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
     return unique_keys
 
 ####
-async def get_vehicle_data_async(db: AsyncSession, agency_id: str, vehicle_id: str):
-    result = await db.execute(select(models.VehiclePositions).where(models.VehiclePositions.agency_id == agency_id,models.VehiclePositions.vehicle_id == vehicle_id))
-    data = result.scalars().one_or_none()
-    return data
 
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
@@ -167,13 +168,6 @@ async def get_all_data_async(async_session: Session, model: Type[BaseModel], age
     data = await get_data_async(async_session, model, agency_id, cache_expiration=cache_expiration)
     return data
 
-async def get_list_data_async(db: Session, model: Type[DeclarativeMeta], field: str, agency_id: str):
-    stmt = select(getattr(model, field)).where(model.agency_id == agency_id).distinct()
-    result = await db.execute(stmt)
-    data = result.scalars().all()
-    return data
-
-import logging
 
 async def get_list_of_unique_values_async(session: AsyncSession, model, agency_id: str, field_name: str):
     """
@@ -210,22 +204,6 @@ async def get_list_of_unique_values_async(session: AsyncSession, model, agency_i
     await redis_connection.set(key, pickle.dumps(unique_values))
 
     return unique_values
-
-async def get_all_gtfs_rt_vehicle_positions_trip_data_async(async_db: AsyncSession, agency_id: str, geojson: bool):
-    result = await async_db.execute(
-        select([models.StopTimeUpdates, models.VehiclePosition, models.Stop, models.StopTimes])
-        .where(
-            and_(
-                models.StopTimeUpdates.trip_id == models.VehiclePositions.trip_id,
-                models.StopTimeUpdates.stop_id == models.Stops.stop_id,
-                models.StopTimes.trip_id == models.VehiclePositions.trip_id,
-                models.StopTimes.stop_sequence == models.VehiclePositions.current_stop_sequence,
-                models.VehiclePositions.agency_id == agency_id
-            )
-        )
-    )
-    return result.scalars().all()
-
 
 # stop_times utils
 def get_stop_times_by_route_code(db, route_code: str,agency_id: str):
@@ -267,291 +245,53 @@ async def get_stop_times_by_trip_id(db, trip_id: str, agency_id: str):
 
     return result
 
-# def get_stop_times_by_trip_id_old(db, trip_id: str,agency_id: str):
-#     the_query = db.query(models.StopTimes).filter(models.StopTimes.trip_id == trip_id,models.StopTimes.agency_id == agency_id).all()
-#     # user_dict = models.User[username]route_code
-#     # return schemas.UserInDB(**user_dict)
-#     return the_query
-
-def temp_solution(val):
-    return True
-
-def list_gtfs_rt_trips_by_field_name(db, field_name: str,agency_id: str):
-    result = []
-    if field_name == 'stop_id':
-        the_query = db.query(getattr(models.StopTimeUpdates,field_name),models.StopTimeUpdates.agency_id).with_entities(getattr(models.StopTimeUpdates,field_name)).filter(models.StopTimeUpdates.agency_id == agency_id).all()
-    else:
-        the_query = db.query(getattr(models.TripUpdate,field_name),models.TripUpdate.agency_id).with_entities(getattr(models.TripUpdate,field_name)).filter(models.TripUpdate.agency_id == agency_id).all()
-    
-    for row in the_query:
-        result.append(row[0])
-    return result
-
-def list_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,agency_id: str):
-    the_query = db.query(getattr(models.VehiclePosition,field_name),models.VehiclePositions.agency_id).with_entities(getattr(models.VehiclePosition,field_name)).filter(models.VehiclePositions.agency_id == agency_id).all()
-    result = []
-    for row in the_query:
-        result.append(row[0])
-    return result
-
-async def get_gtfs_rt_trips_by_field_name(db, field_name: str, field_value: str, agency_id: str):
-    # Try to get the result from Redis first
-    cache_key = f'trips:{field_name}:{field_value}:{agency_id}'
-    cached_result = await redis_connection.get(cache_key)
-    if cached_result is not None:
-        return pickle.loads(cached_result)
-
-    if field_name == 'stop_id':
-        the_query = db.query(models.TripUpdate).join(models.StopTimeUpdates).filter(getattr(models.StopTimeUpdates,field_name) == field_value,models.TripUpdate.agency_id == agency_id).all()
-    else:
-        the_query = db.query(models.TripUpdate).filter(getattr(models.TripUpdate,field_name) == field_value,models.TripUpdate.agency_id == agency_id).all()
-        if len(the_query) == 0:
-            the_query = db.query(models.TripUpdate).filter(getattr(models.TripUpdate,field_name) == field_value,models.TripUpdate.agency_id == agency_id).all()
-            return the_query
-
-    result = []
-    if the_query:
-        for row in the_query:
-            new_row = trip_update_reformat(row)
-            result.append(new_row)
-
-    # If result is not empty, store it in Redis for future use
-    if result:
-        await redis_connection.set(cache_key, pickle.dumps(result))
-
-    return result
-
-async def get_all_gtfs_rt_trips(db, agency_id: str):
-    # Try to get the result from Redis first
-    cache_key = f'trips:{agency_id}'
-    cached_result = await redis_connection.get(cache_key)
-    if cached_result is not None:
-        return pickle.loads(cached_result)
-
-    the_query = db.query(models.TripUpdate).filter(models.TripUpdate.agency_id == agency_id).all()
-    result = []
-    for row in the_query:
-        new_row = trip_update_reformat(row)
-        result.append(new_row)
-
-    # If result is not empty, store it in Redis for future use
-    if result:
-        await redis_connection.set(cache_key, pickle.dumps(result))
-
-    return result
-
-async def get_all_gtfs_rt_vehicle_positions(db, agency_id: str, geojson: bool):
-    try:
-        # Try to get the result from Redis first
-        cache_key = f'vehicle_positions:{agency_id}:{geojson}'
-        cached_result = await redis_connection.get(cache_key)
-        if cached_result is not None:
-            return pickle.loads(cached_result)
-
-        the_query = db.query(models.VehiclePositions).filter(models.VehiclePositions.agency_id == agency_id)
-        all_rows = await get_all_data(the_query)  # Use the utility function here
-
-        result = []
-        if geojson:
-            this_json = {}
-            count = 0
-            features = []
-            for row in all_rows:
-                count += 1
-                features.append(await vehicle_position_reformat(row, geojson))  # await the coroutine here
-            this_json['metadata'] = {'count': count}
-            this_json['metadata'] = {'title': 'Vehicle Positions'}
-            this_json['type'] = "FeatureCollection"
-            this_json['features'] = features
-            result = this_json
-        else:
-            for row in all_rows:
-                new_row = await vehicle_position_reformat(row, geojson)  # await the coroutine here
-                result.append(new_row)
-
-        # If result is not empty, store it in Redis for future use
-        if result:
-            await redis_connection.set(cache_key, pickle.dumps(result))
-
-        return result
-    except Exception as e:
-        return e
-
-def get_gtfs_rt_vehicle_positions_by_field_name(db, field_name: str,field_value: str,geojson:bool,agency_id: str):
-    if field_value is None:
-        the_query = db.query(models.VehiclePositions).filter(models.VehiclePositions.agency_id == agency_id).all()
-    the_query = db.query(models.VehiclePositions).filter(getattr(models.VehiclePositions,field_name) == field_value,models.VehiclePositions.agency_id == agency_id).all()
-    result = []
-    if geojson == True:
-        this_json = {}
-        count = 0
-        features = []
-        for row in the_query:
-            count += 1
-            features.append(vehicle_position_reformat(row,geojson))
-        this_json['metadata'] = {'count': count}
-        this_json['metadata'] = {'title': 'Vehicle Positions'}
-        this_json['type'] = "FeatureCollection"
-        this_json['features'] = features
-        return this_json
-    for row in the_query:
-        new_row = vehicle_position_reformat(row,geojson)
-        result.append(new_row)
-    return result
-
-def _async(db, agency_id: str, geojson: bool):
-    # Query the database for vehicle positions
-    vehicle_positions = db.query(models.VehiclePositions).filter(
-        models.VehiclePositions.agency_id == agency_id).all()
-
-    # If geojson is True, return the data in GeoJSON format
-    if geojson:
-        features = [vehicle_position_reformat(vp, geojson) for vp in vehicle_positions if vp.trip_id]
-        return {
-            'metadata': {'count': len(features), 'title': 'Vehicle Positions'},
-            'type': "FeatureCollection",
-            'features': features
-        }
-
-    # Otherwise, reformat the data and add additional information
-    result = []
-    for vp in vehicle_positions:
-        if vp.trip_id:
-            new_row = vehicle_position_reformat_for_trip_details(vp, geojson)
-            stop_name_query = db.query(models.Stops.stop_name).filter(
-                models.Stops.stop_id == new_row.stop_id,
-                models.Stops.agency_id == agency_id).first()
-            new_row.stop_name = stop_name_query['stop_name']
-
-            stop_time_update_query = db.query(models.StopTimeUpdates).filter(
-                models.StopTimeUpdates.trip_id == new_row.trip_id,
-                models.StopTimeUpdates.stop_sequence == new_row.current_stop_sequence).first()
-
-            if stop_time_update_query:
-                new_row.trip_assigned = True
-                new_row.upcoming_stop_time_update = upcoming_stop_time_reformat(stop_time_update_query)
-
-                route_code_query = db.query(models.StopTimes.route_code).filter(
-                    models.StopTimes.trip_id == new_row.trip_id,
-                    models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()
-                destination_code_query = db.query(models.StopTimes.destination_code).filter(
-                    models.StopTimes.trip_id == new_row.trip_id,
-                    models.StopTimes.stop_sequence == new_row.current_stop_sequence).first()
-
-                new_row.route_code = route_code_query['route_code'] if route_code_query else None
-                new_row.destination_code = destination_code_query['destination_code'] if destination_code_query else None
-
-                result.append(new_row)
-
-    # Return a message if no vehicle positions are available
-    if not result:
-        return [{"message": "No Vehicle Positions available at this time"}]
-
-    return result
-import pickle
-from sqlalchemy import and_
-from sqlalchemy.orm import joinedload
-async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code(session: AsyncSession, route_code: str, geojson:bool, agency_id:str):
-    cache_key = f'trip_data:{route_code}:{agency_id}'
-    cached_data = await redis_connection.get(cache_key)
-    if cached_data is not None:
-        return pickle.loads(cached_data)
-    stmt = (
-        select(models.VehiclePositions, models.StopTimeUpdates).
-        join(models.StopTimeUpdates, 
-             and_(models.VehiclePositions.trip_id == models.StopTimeUpdates.trip_id,
-                  models.VehiclePositions.current_stop_sequence == models.StopTimeUpdates.stop_sequence)).
-        filter(
-            models.VehiclePositions.route_code == route_code,
-            models.VehiclePositions.agency_id == agency_id,
-        )
-    )
-
-    result = await session.execute(stmt)
-    vehicle_positions = result.scalars().all()
-
-    if geojson:
-        return convert_to_geojson(vehicle_positions)
-
-    return vehicle_positions
-
-
-async def get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session,route_code: str, geojson:bool,agency_id:str):
-    cache_key = f'vehicle_positions_trip_data:{agency_id}:{route_code}:{geojson}'
+async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters: dict, geojson:bool, agency_id:str):
+    cache_key = f'trip_data:{str(filters)}:{agency_id}'
     if redis_connection is None:
         initialize_redis()
     cached_result = await redis_connection.get(cache_key)
     if cached_result is not None:
-        yield pickle.loads(cached_result)
+        return pickle.loads(cached_result)
 
-    the_query = session.execute(select(models.VehiclePositions).where(models.VehiclePositions.route_code == route_code,models.VehiclePositions.agency_id == agency_id).order_by(models.VehiclePositions.route_code))
-    result = the_query.scalars().all()
-    if geojson == True:
-        this_json = {}
-        count = 0
-        features = []
-        for row in the_query.scalars().all():
-            count += 1
-            new_geojson = vehicle_position_reformat_for_trip_details_for_async(row,geojson)
-            if new_geojson['properties']['trip']['stop_id']:
-                geojson_stop_id = new_geojson['properties']['trip']['stop_id']
-                stop_name_query = await session.execute(select(models.Stops.stop_name).where(models.Stops.stop_id == geojson_stop_id,models.Stops.agency_id == agency_id))
-                for row in stop_name_query.scalars().all():
-                    new_geojson['properties']['stop_name'] = row
-                if new_geojson['properties']['trip']['trip_id']:
-                        geojson_trip_id = new_geojson['properties']['trip']['trip_id']
-                        geojson_current_stop_sequence = new_geojson['properties']['trip']['current_stop_sequence']
-                        upcoming_stop_time_update_query = await session.execute(select(models.StopTimeUpdates).where(models.StopTimeUpdates.trip_id == geojson_trip_id,models.StopTimeUpdates.stop_sequence == geojson_current_stop_sequence))
-                        # new_geojson['properties']['trip_info']['upcoming_stop_time_update'] = upcoming_stop_time_update_query.scalar()
-                            # new_geojson['properties']['trip_info']['upcoming_stop_time_update'] = row
-                        upcoming_update = upcoming_stop_time_reformat_for_async(upcoming_stop_time_update_query.scalars().first())
-                        if upcoming_update:
-                            new_geojson['properties']['trip']['upcoming_stop_time_update'] = upcoming_update
-                            trip_details_query = await session.execute(select(models.TripUpdate).where(models.TripUpdate.trip_id == geojson_trip_id))
-                            new_geojson['properties']['trip']['direction_id'] = trip_details_query.scalar().direction_id                            
-                        route_code_query = await session.execute(select(models.StopTimes.route_code).where(models.StopTimes.trip_id == geojson_trip_id,models.StopTimes.stop_sequence == geojson_current_stop_sequence))
-                        destination_code_query = await session.execute(select(models.StopTimes.destination_code).where(models.StopTimes.trip_id == geojson_trip_id,models.StopTimes.stop_sequence == geojson_current_stop_sequence))
-                        if route_code_query:
-                            new_geojson['properties']['trip']['route_code'] = route_code_query.scalar()
-                        if destination_code_query:
-                            new_geojson['properties']['trip']['destination_code'] = destination_code_query.scalar()
+    stmt = (
+        select(models.VehiclePositions, models.StopTimes.destination_code, models.StopTimes.stop_headsign, models.StopTimes.arrival_time,models.StopTimes.departure_time, models.StopTimes.pickup_type, models.StopTimes.drop_off_type, models.StopTimes.rider_usage_code, models.StopTimeUpdates).
+        join(models.StopTimes, 
+            and_(models.VehiclePositions.trip_id == models.StopTimes.trip_id,
+                models.VehiclePositions.current_stop_sequence == models.StopTimes.stop_sequence)).
+        join(models.StopTimeUpdates, 
+            and_(models.VehiclePositions.trip_id == models.StopTimeUpdates.trip_id,
+                models.VehiclePositions.current_stop_sequence == models.StopTimeUpdates.stop_sequence))
+    )
 
-            features.append(new_geojson)
-        this_json['metadata'] = {'count': count}
-        this_json['metadata'] = {'title': 'Vehicle Positions'}
-        this_json['type'] = "FeatureCollection"
-        this_json['features'] = features
-        await redis_connection.set(cache_key, pickle.dumps(this_json))
-        yield this_json
-    else:
-        result = []
-        for row in the_query.scalars().all():
-            new_row = vehicle_position_reformat_for_trip_details_for_async(row,geojson)
-            if new_row['trip']['stop_id']:
-                this_stop_id = new_row['trip']['stop_id']
-                stop_name_query = await session.execute(select(models.Stops.stop_name).where(models.Stops.stop_id == this_stop_id,models.Stops.agency_id == agency_id))
-                new_row['stop_name'] = stop_name_query.scalar()
-                new_row_current_stop_sequence = new_row['trip']['current_stop_sequence']
-                new_row_trip_id = new_row['trip']['trip_id']
-                upcoming_stop_time_update_query = await session.execute(select(models.StopTimeUpdates).where(models.StopTimeUpdates.trip_id == new_row_trip_id,models.StopTimeUpdates.stop_sequence == new_row_current_stop_sequence))
-                if upcoming_stop_time_update_query is not None:
-                    new_row['trip_assigned'] = True
-                    trip_details_query = await session.execute(select(models.TripUpdate).where(models.TripUpdate.trip_id == new_row_trip_id))
-                    new_row['direction_id'] = trip_details_query.scalar().direction_id
-                new_row['upcoming_stop_time_update'] = upcoming_stop_time_reformat(upcoming_stop_time_update_query.scalars().first())
-                route_code_query = await session.execute(select(models.StopTimes.route_code).where(models.StopTimes.trip_id == new_row_trip_id,models.StopTimes.stop_sequence == new_row_current_stop_sequence))
-                destination_code_query = await session.execute(select(models.StopTimes.destination_code).where(models.StopTimes.trip_id == new_row_trip_id,models.StopTimes.stop_sequence == new_row_current_stop_sequence))
-                new_row['route_code'] = route_code_query.scalar()
-                new_row['destination_code'] = destination_code_query.scalar()
-                result.append(new_row)
-        if result == []:
-            message_object = [{'message': 'No vehicle data for this vehicle id: ' + str(route_code)}]
-            yield message_object
+    for key, value in filters.items():
+        if isinstance(value, list):
+            stmt = stmt.filter(getattr(models.VehiclePositions, key).in_(value))
         else:
-            await redis_connection.set(cache_key, pickle.dumps(result))
-            yield result
+            stmt = stmt.filter(getattr(models.VehiclePositions, key) == value)
 
-def get_distinct_stop_ids(the_query):
+    stmt = stmt.filter(models.VehiclePositions.agency_id == agency_id)
+
+    result = session.execute(stmt)
+    vehicle_positions = []
+    for vp, destination_code, stop_headsign, arrival_time, departure_time, pickup_type, drop_off_type, rider_usage_code, stu in result:
+        vp_dict = vp.to_dict()
+        vp_dict['destination_code'] = destination_code
+        vp_dict['stop_headsign'] = stop_headsign
+        vp_dict['arrival_time'] = arrival_time
+        vp_dict['departure_time'] = departure_time
+        vp_dict['pickup_type'] = pickup_type
+        vp_dict['drop_off_type'] = drop_off_type
+        vp_dict['rider_usage_code'] = rider_usage_code
+        vehicle_positions.append(vp_dict)
+        vp_dict = vp.to_dict()
+        vp_dict['destination_code'] = destination_code
+        vp_dict['stop_headsign'] = stop_headsign
+        vehicle_positions.append(vp_dict)
+    if geojson:
+        return convert_to_geojson(vehicle_positions)
+    return vehicle_positions
+
+def get_unique_stop_ids(the_query):
     stop_id_list = []
     for row in the_query:
         if row.stop_id not in stop_id_list:
@@ -562,7 +302,7 @@ async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str
     the_query = await session.execute(select(models.StopTimeUpdates).where(models.StopTimeUpdates.route_code == route_code,models.StopTimeUpdates.agency_id == agency_id))
 
     # function call to get list of distinct stop_ids from the_query results
-    stop_id_list = get_distinct_stop_ids(the_query.scalars().all())
+    stop_id_list = get_unique_stop_ids(the_query.scalars().all())
 
     # loop through list of distinct stop_ids to create a stop_list that has:
     # - stop_sequence (might be different in result rows)
@@ -603,28 +343,8 @@ async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str
         else:
             yield result
 
-async def get_gtfs_rt_vehicle_positions_trip_data_redis(db, vehicle_id: str):
-    # Create a unique key for this vehicle_id
-    key = f'vehicle:{vehicle_id}'
-    
-    # Try to get data from Redis
-    data = await redis_connection.get(key)
-    
-    if data is None:
-        # If data is not in Redis, get it from the database
-        result = db.query(models.VehiclePositions).filter(models.VehiclePositions.vehicle_id == vehicle_id).all()
-        
-        if not result:
-            return None
-        
-        # Convert the result to JSON and store it in Redis
-        data = json.dumps([dict(row) for row in result])
-        await redis_connection.set(key, data)
-    
-    return data
 
-
-async def get_gtfs_rt_vehicle_positions_trip_data(db, vehicle_id: str, geojson: bool, agency_id: str):
+async def get_gtfs_rt_vehicle_positions_trip_data_old(db, vehicle_id: str, geojson: bool, agency_id: str):
     # Try to get the result from Redis first
     cache_key = f'vehicle_positions:{vehicle_id}:{geojson}:{agency_id}'
     result = await redis_connection.get(cache_key)

@@ -285,7 +285,6 @@ class StopTimeUpdates(BaseModel):
     start_time = Column(String)
     start_date = Column(String)
     direction_id = Column(Integer)
-    vehicle_id = Column(String)
     schedule_relationship = Column(Integer)
 
 class VehiclePositions(BaseModel):

@@ -442,6 +442,38 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
         raise HTTPException(status_code=404, detail="Data not found")
     return data
 
+#### Trip detail endpoints ####
+@app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
+async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
+    route_codes = route_code.split(',')
+    data = await crud.get_gtfs_rt_vehicle_positions_trip_data(db, {'route_code': route_codes}, geojson, agency_id.value)
+    if geojson:
+        return data
+    else:
+        result = []
+        for item in data:
+            result.append(item)
+        return result
+
+@app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id}", tags=["Real-Time data"])
+async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, geojson: bool = False, db: AsyncSession = Depends(get_db)):
+    if vehicle_id:
+        vehicle_ids = vehicle_id.split(',')
+        data = await crud.get_gtfs_rt_vehicle_positions_trip_data(db, {'vehicle_id': vehicle_ids}, geojson, agency_id.value)
+        if geojson:
+            return data
+        else:
+            result = []
+            for item in data:
+                result.append(item)
+            return result
+    return {"message": "No vehicle_id provided"}
+
+
+#### End Trip detail endpoints ####
+
+#### Websocket endpoints ####
+
 import json
 import asyncio
 import aioredis
@@ -476,6 +508,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: Asy
         crud.redis_connection.unsubscribe('live_vehicle_positions')
         crud.redis_connection.close()
         await crud.redis_connection.wait_closed()
+
 @app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
 async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, async_db: AsyncSession = Depends(get_async_db)):
     await websocket.accept()
@@ -505,48 +538,6 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
     except WebSocketDisconnect:
         # Handle the WebSocket disconnect event
         print("WebSocket disconnected")
-
-##### todo: Needs to be tested
-
-@app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
-async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
-    result = []
-    async for item in crud.get_gtfs_rt_vehicle_positions_trip_data_by_route_code_for_async(session=db, route_code=route_code, geojson=geojson, agency_id=agency_id.value):
-        result.append(item)
-    return result
-
-@app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id?}", tags=["Real-Time data"])
-async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, operation: OperationEnum = Depends(), geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
-    if operation == OperationEnum.ALL:
-        result = await crud.get_all_data_async(async_db, models.VehiclePositions, operation.value)
-        return result
-    if vehicle_id:
-        multiple_values = vehicle_id.split(',')
-        if len(multiple_values) > 1:
-            result_array = []
-            for value in multiple_values:
-                temp_result = await crud.get_data_async(async_db, models.VehiclePositions, 'vehicle_id', value)
-                if len(temp_result) == 0:
-                    temp_result = { "message": "field_value '" + value + "' not found in field_name '" + value + "'" }
-                result_array.append(temp_result)
-            return result_array
-        else:
-            result = await crud.get_data_async(async_db, models.VehiclePositions, 'vehicle_id', vehicle_id)
-        return result
-    return {"message": "No vehicle_id provided"}
-
-
-@app.get("/{agency_id}/trip_detail/route/{route_code?}", tags=["Real-Time data"])
-async def get_trip_detail_by_route(agency_id: AgencyIdEnum, route_code: Optional[OperationEnum] = None, geojson: bool = False, async_db: AsyncSession = Depends(get_async_db)):
-    if route_code == OperationEnum.ALL:
-        result = await crud.get_all_data_async(async_db, models.VehiclePositions, route_code.value)
-        return result
-    elif route_code:
-        result = await crud.get_data_async(async_db, models.VehiclePositions, 'route_code', route_code.value)
-        return result
-    return {"message": "No route_code provided"}
-
-###------------ End todo: Needs to be tested--------------
 
 #### END GTFS-RT Routes ####
 
