@@ -475,9 +475,9 @@ async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositi
 
 #### Trip detail endpoints ####
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
-async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, db: AsyncSession = Depends(get_db)):
+async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str, geojson:bool=False, include_stop_time_updates: bool = False, db: AsyncSession = Depends(get_db)):
     route_codes = route_code.split(',')
-    data = await crud.get_gtfs_rt_vehicle_positions_trip_data(db, {'route_code': route_codes}, geojson, agency_id.value)
+    data = await crud.get_gtfs_rt_vehicle_positions_trip_data(db, {'route_code': route_codes}, geojson, agency_id.value, include_stop_time_updates)
     if geojson:
         return data
     else:
@@ -487,13 +487,13 @@ async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str
         return result
 
 @app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id}", tags=["Real-Time data"])
-async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, stop_sequence: Optional[int] = None, geojson: bool = False, db: AsyncSession = Depends(get_db)):
+async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, stop_sequence: Optional[int] = None, geojson: bool = False, include_stop_time_updates: bool = False, db: AsyncSession = Depends(get_db)):
     if vehicle_id:
         vehicle_ids = vehicle_id.split(',')
         filters = {'vehicle_id': vehicle_ids}
         if stop_sequence is not None:
             filters['stop_sequence'] = stop_sequence
-        data = await crud.get_gtfs_rt_vehicle_positions_trip_data(db, filters, geojson, agency_id.value)
+        data = await crud.get_gtfs_rt_vehicle_positions_trip_data(db, filters, geojson, agency_id.value, include_stop_time_updates)
         if geojson:
             return data
         else:
