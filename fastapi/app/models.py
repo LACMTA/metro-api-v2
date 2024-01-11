@@ -55,7 +55,7 @@ class CalendarDates(Base):
     exception_type = Column(Integer)
     agency_id = Column(String)
 
-class StopTimes(Base):
+class StopTimes(BaseModel):
     __tablename__ = "stop_times"
     arrival_time = Column(String)
     departure_time = Column(String)

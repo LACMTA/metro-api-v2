@@ -279,12 +279,15 @@ async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters
         return pickle.loads(cached_result)
 
     stmt = (
-        select(models.VehiclePositions, models.TripUpdates.stop_time_json).
-        join(models.TripUpdates, models.VehiclePositions.trip_id == models.TripUpdates.trip_id)
+        select(models.VehiclePositions, models.TripUpdates.stop_time_json, models.StopTimes).
+        join(models.TripUpdates, models.VehiclePositions.trip_id == models.TripUpdates.trip_id).
+        join(models.StopTimes, models.VehiclePositions.trip_id == models.StopTimes.trip_id)
     )
 
     for key, value in filters.items():
-        if isinstance(value, list):
+        if key == 'stop_sequence':
+            stmt = stmt.filter(models.StopTimes.stop_sequence == value)
+        elif isinstance(value, list):
             stmt = stmt.filter(getattr(models.VehiclePositions, key).in_(value))
         else:
             stmt = stmt.filter(getattr(models.VehiclePositions, key) == value)
@@ -294,11 +297,12 @@ async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters
     result = session.execute(stmt)
     vehicle_positions = []
 
-    for vp, stop_time_json in result:
+    for vp, stop_time_json, st in result:
         vp_dict = vp.to_dict()
+        vp_dict.update(st.to_dict())
         if isinstance(stop_time_json, str):
             try:
-                vp_dict['stop_time_updates'] = json.loads(stop_time_json)
+                vp_dict['stop_time_updates'] = stop_time_json
             except json.JSONDecodeError:
                 print(f"Error decoding JSON for stop_time_json: {stop_time_json}")
                 continue
@@ -307,7 +311,6 @@ async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters
     if geojson:
         return convert_to_geojson(vehicle_positions)
     return vehicle_positions
-
 def get_unique_stop_ids(the_query):
     stop_id_list = []
     for row in the_query:

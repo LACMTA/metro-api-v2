@@ -487,10 +487,13 @@ async def get_trip_detail_by_route_code(agency_id: AgencyIdEnum, route_code: str
         return result
 
 @app.get("/{agency_id}/trip_detail/vehicle/{vehicle_id}", tags=["Real-Time data"])
-async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, geojson: bool = False, db: AsyncSession = Depends(get_db)):
+async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Optional[str] = None, stop_sequence: Optional[int] = None, geojson: bool = False, db: AsyncSession = Depends(get_db)):
     if vehicle_id:
         vehicle_ids = vehicle_id.split(',')
-        data = await crud.get_gtfs_rt_vehicle_positions_trip_data(db, {'vehicle_id': vehicle_ids}, geojson, agency_id.value)
+        filters = {'vehicle_id': vehicle_ids}
+        if stop_sequence is not None:
+            filters['stop_sequence'] = stop_sequence
+        data = await crud.get_gtfs_rt_vehicle_positions_trip_data(db, filters, geojson, agency_id.value)
         if geojson:
             return data
         else:
@@ -499,7 +502,6 @@ async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Option
                 result.append(item)
             return result
     return {"message": "No vehicle_id provided"}
-
 
 #### End Trip detail endpoints ####
 
