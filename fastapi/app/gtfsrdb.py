@@ -35,7 +35,6 @@ except ImportError:
 from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import sessionmaker
 import gtfs_realtime_pb2
-from gtfs_models import *
 
 p = OptionParser()
 

@@ -1,6 +1,5 @@
 import polyline
 import ast 
-import pickle
 
 from turtle import position
 from typing import Type, Optional
@@ -8,10 +7,11 @@ from datetime import datetime,timedelta
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.future import select
 
-from sqlalchemy import and_, inspect
+from sqlalchemy import and_, inspect, cast, Integer
 from sqlalchemy.orm import joinedload
 from sqlalchemy import exists
 from sqlalchemy.sql import text
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
@@ -81,7 +81,7 @@ initialize_redis()
 
 def asdict(obj):
     result = {}
-    for c in sqlalchemy.inspect(obj).mapper.column_attrs:
+    for c in inspect(obj).mapper.column_attrs:
         value = getattr(obj, c.key)
         if isinstance(value, WKBElement):
             # Convert WKBElement to WKT format
@@ -136,8 +136,11 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
 
 ####
 
+
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
+    logging.info(f"Executing query for model={model}, agency_id={agency_id}, field={field_name}, id={field_value}")
+
     key = f"{model.__name__}:{agency_id}:{field_name}:{field_value}"
 
     # Try to get the result from Redis
@@ -145,29 +148,35 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
         initialize_redis()
     result = await redis_connection.get(key)
     if result is not None:
-        data = pickle.loads(result)
-        if isinstance(data, model):
+        try:
+            data = pickle.loads(result)
+        except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
+            logging.error(f"Error unpickling data from Redis: {e}")
+            data = None
+        if data is not None and isinstance(data, model):
             # If the data is a SQLAlchemy model instance, convert it to a dict
-            data = {c.key: getattr(data, c.key) for c in sqlalchemy.inspect(data).mapper.column_attrs}
-        return data
+            data = {c.key: getattr(data, c.key) for c in inspect(data).mapper.column_attrs}
+            return data
 
     # Query the database
     if field_name and field_value:
-        stmt = select(model).where(getattr(model, field_name) == field_value, getattr(model, 'agency_id') == agency_id)
+        stmt = select(model).where(text(f"{field_name} = :value"), getattr(model, 'agency_id') == agency_id).params(value=field_value)
     else:
         stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
     result = await async_session.execute(stmt)
     data = result.scalars().all()
 
     # Cache the result in Redis with the specified expiration time
-    await redis_connection.set(key, pickle.dumps(data), ex=cache_expiration)
+    try:
+        await redis_connection.set(key, pickle.dumps(data), ex=cache_expiration)
+    except pickle.PicklingError as e:
+        logging.error(f"Error pickling data for Redis: {e}")
 
-    return [item.to_dict() for item in data]   
+    return [item.to_dict() for item in data]
  
 async def get_all_data_async(async_session: Session, model: Type[BaseModel], agency_id: str, cache_expiration: int = None):
     data = await get_data_async(async_session, model, agency_id, cache_expiration=cache_expiration)
     return data
-
 
 async def get_list_of_unique_values_async(session: AsyncSession, model, agency_id: str, field_name: str):
     """
@@ -176,7 +185,9 @@ async def get_list_of_unique_values_async(session: AsyncSession, model, agency_i
     # Create a unique key for this query
     key = f"{model.__name__}:{agency_id}:{field_name}:unique_values"
     logging.info(f"Generated key: {key}")
-
+    # Try to get the result from Redis
+    if redis_connection is None:
+        initialize_redis()
     # Try to get the result from Redis
     result = await redis_connection.get(key)
     if result is not None:
@@ -245,6 +256,20 @@ async def get_stop_times_by_trip_id(db, trip_id: str, agency_id: str):
 
     return result
 
+async def get_unique_shape_scheduled_stop_times(db: AsyncSession, route_code: str, direction_id: int):
+    stmt = (
+        select(models.UniqueShapeStopTimes)
+        .where(
+            and_(
+                models.UniqueShapeStopTimes.route_code == route_code,
+                models.UniqueShapeStopTimes.direction_id == direction_id
+            )
+        )
+    )
+
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
 async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters: dict, geojson:bool, agency_id:str):
     cache_key = f'trip_data:{str(filters)}:{agency_id}'
     if redis_connection is None:
@@ -254,17 +279,15 @@ async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters
         return pickle.loads(cached_result)
 
     stmt = (
-        select(models.VehiclePositions, models.StopTimes.destination_code, models.StopTimes.stop_headsign, models.StopTimes.arrival_time,models.StopTimes.departure_time, models.StopTimes.pickup_type, models.StopTimes.drop_off_type, models.StopTimes.rider_usage_code, models.StopTimeUpdates).
-        join(models.StopTimes, 
-            and_(models.VehiclePositions.trip_id == models.StopTimes.trip_id,
-                models.VehiclePositions.current_stop_sequence == models.StopTimes.stop_sequence)).
-        join(models.StopTimeUpdates, 
-            and_(models.VehiclePositions.trip_id == models.StopTimeUpdates.trip_id,
-                models.VehiclePositions.current_stop_sequence == models.StopTimeUpdates.stop_sequence))
+        select(models.VehiclePositions, models.TripUpdates.stop_time_json, models.StopTimes).
+        join(models.TripUpdates, models.VehiclePositions.trip_id == models.TripUpdates.trip_id).
+        join(models.StopTimes, models.VehiclePositions.trip_id == models.StopTimes.trip_id)
     )
 
     for key, value in filters.items():
-        if isinstance(value, list):
+        if key == 'stop_sequence':
+            stmt = stmt.filter(models.StopTimes.stop_sequence == value)
+        elif isinstance(value, list):
             stmt = stmt.filter(getattr(models.VehiclePositions, key).in_(value))
         else:
             stmt = stmt.filter(getattr(models.VehiclePositions, key) == value)
@@ -273,24 +296,21 @@ async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters
 
     result = session.execute(stmt)
     vehicle_positions = []
-    for vp, destination_code, stop_headsign, arrival_time, departure_time, pickup_type, drop_off_type, rider_usage_code, stu in result:
+
+    for vp, stop_time_json, st in result:
         vp_dict = vp.to_dict()
-        vp_dict['destination_code'] = destination_code
-        vp_dict['stop_headsign'] = stop_headsign
-        vp_dict['arrival_time'] = arrival_time
-        vp_dict['departure_time'] = departure_time
-        vp_dict['pickup_type'] = pickup_type
-        vp_dict['drop_off_type'] = drop_off_type
-        vp_dict['rider_usage_code'] = rider_usage_code
+        vp_dict.update(st.to_dict())
+        if isinstance(stop_time_json, str):
+            try:
+                vp_dict['stop_time_updates'] = stop_time_json
+            except json.JSONDecodeError:
+                print(f"Error decoding JSON for stop_time_json: {stop_time_json}")
+                continue
         vehicle_positions.append(vp_dict)
-        vp_dict = vp.to_dict()
-        vp_dict['destination_code'] = destination_code
-        vp_dict['stop_headsign'] = stop_headsign
-        vehicle_positions.append(vp_dict)
+
     if geojson:
         return convert_to_geojson(vehicle_positions)
     return vehicle_positions
-
 def get_unique_stop_ids(the_query):
     stop_id_list = []
     for row in the_query:
@@ -518,12 +538,20 @@ def get_shape_by_id(db,geojson,shape_id,agency_id):
             new_object['type'] = 'Feature' 
             new_object['geometry']= JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
             properties = {}
-            properties = {'shape_id': row.shape_id,'agency_id': row.agency_id}
+            properties = {'shape_id': row.shape_id,'agency_id': row.agency_id,'shape_pt_sequence': row.shape_pt_sequence}
             new_object['properties'] = properties
             result.append(new_object)
         return result
     else:
-        return the_query
+        for row in the_query:
+            new_object = {}
+            new_object['shape_id'] = row.shape_id
+            new_object['agency_id'] = row.agency_id
+            new_object['shape_pt_lat'] = row.shape_pt_lat
+            new_object['shape_pt_lon'] = row.shape_pt_lon
+            new_object['shape_pt_sequence'] = row.shape_pt_sequence
+            result.append(new_object)
+        return result
 
 def get_routes_by_route_id(db,route_id,agency_id):
     if route_id == 'list':
@@ -589,7 +617,31 @@ def get_route_overview_by_route_code(db,route_code,agency_id):
     else:
         the_query = db.query(models.RouteOverview).filter(models.RouteOverview.agency_id == agency_id).all()
         return the_query      
-      
+
+def get_route_code_mapping(db: Session, agency_id: str):
+    routes = db.query(models.RouteStops).filter(models.RouteStops.agency_id == agency_id).all()
+    return {route.route_id: route.route_code for route in routes}
+def get_trip_shapes_for_route(db: Session, route_code: str, agency_id: str):
+    # Get the route_id for the given route_code
+    route_id = db.query(models.RouteStops.route_id).filter(models.RouteStops.route_code == route_code, models.RouteStops.agency_id == agency_id).first()
+
+    if route_id is None:
+        return []
+
+    # Get the shape_ids for the given route_id
+    shape_ids = db.query(models.Trips.shape_id).filter(models.Trips.route_id == route_id[0], models.Trips.agency_id == agency_id).all()
+
+    # Get the trip shapes for the given shape_ids
+    trip_shapes = db.query(models.TripShapes).filter(models.TripShapes.shape_id.in_([shape_id[0] for shape_id in shape_ids]), models.TripShapes.agency_id == agency_id).all()
+    return trip_shapes
+def get_stops_for_trip_shape(db: Session, shape_id: str, agency_id: str):
+    # Get the stop_ids for the given shape_id from the new table
+    stop_ids = db.query(models.TripShapeStops.stop_ids).filter(models.TripShapeStops.shape_id == shape_id, models.TripShapeStops.agency_id == agency_id).first()
+
+    # Get the stops for the given stop_ids
+    stops = db.query(models.Stops).filter(models.Stops.stop_id.in_(stop_ids), models.Stops.agency_id == agency_id).all()
+
+    return stops
 def get_gtfs_route_stops_for_buses(db,route_code):
     the_query = db.query(models.RouteStops).filter(models.RouteStops.route_code == route_code,models.RouteStops.agency_id == 'LACMTA').all()
     result = []
