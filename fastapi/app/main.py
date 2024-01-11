@@ -9,7 +9,6 @@ import json
 import requests
 import csv
 import os
-import asyncio
 import aioredis
 
 import pytz
@@ -51,7 +50,7 @@ from starlette.responses import Response
 
 
 
-# from redis import asyncio as aioredis
+# from redi as aioredis
 from enum import Enum
 
 
@@ -208,6 +207,30 @@ class IdTypeEnum(str, Enum):
     route_code = "route_code"
     stop_id = "stop_id"
 
+
+class TableName(Enum):
+    AGENCY = "Agency"
+    CALENDAR = "Calendar"
+    CALENDAR_DATES = "CalendarDates"
+    STOP_TIMES = "StopTimes"
+    STOPS = "Stops"
+    ROUTES = "Routes"
+    ROUTE_OVERVIEW = "RouteOverview"
+    ROUTE_STOPS = "RouteStops"
+    ROUTE_STOPS_GROUPED = "RouteStopsGrouped"
+    TRIP_SHAPES = "TripShapes"
+    SHAPES = "Shapes"
+    TRIPS = "Trips"
+    TRIP_SHAPE_STOPS = "TripShapeStops"
+    GO_PASS_SCHOOLS = "GoPassSchools"
+    CANCELED_SERVICES = "CanceledService"
+    USERS = "Users"
+    TRIP_UPDATES = "TripUpdates"
+    STOP_TIME_UPDATES = "StopTimeUpdates"
+    VEHICLE_POSITION_UPDATES = "VehiclePositionUpdates"
+    UNIQUE_SHAPE_STOP_TIMES = "UniqueShapeStopTimes"
+
+
 class LogFilter(logging.Filter):
     def filter(self, record):
         record.app = "api.metro.net"
@@ -356,7 +379,6 @@ GO_PASS_UPDATE_INTERVAL = 3600
 ####################
 #  Begin Routes
 ####################
-
 #### Begin GTFS-RT Routes ####
 
 @app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])    
@@ -377,15 +399,24 @@ async def get_trip_updates_by_ids(agency_id: AgencyIdEnum, field: TripUpdatesFie
     """
     model = models.TripUpdates
     data = {}
-    ids = ids.split(',')
-    for id in ids:
-        result = await crud.get_data_async(async_db, model, agency_id.value, field.value, id)
+    if "," in ids:
+        ids = ids.split(',')
+        for id in ids:
+            result = await crud.get_data_async(async_db, model, agency_id.value, field.value, id)
+            if result is None:
+                raise HTTPException(status_code=404, detail=f"Data not found for ID {id}")
+            if format == FormatEnum.geojson:
+                # Convert data to GeoJSON format
+                result = to_geojson(result)
+            data[id] = result
+    else:
+        result = await crud.get_data_async(async_db, model, agency_id.value, field.value, ids)
         if result is None:
-            raise HTTPException(status_code=404, detail=f"Data not found for ID {id}")
+            raise HTTPException(status_code=404, detail=f"Data not found for ID {ids}")
         if format == FormatEnum.geojson:
             # Convert data to GeoJSON format
             result = to_geojson(result)
-        data[id] = result
+        data[ids] = result
     return data
 
 @app.get("/{agency_id}/trip_updates/{field}", tags=["Real-Time data"])     
@@ -474,10 +505,6 @@ async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Option
 
 #### Websocket endpoints ####
 
-import json
-import asyncio
-import aioredis
-
 @app.websocket("/ws/{agency_id}/vehicle_positions")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: AsyncSession = Depends(get_async_db)):
     await websocket.accept()
@@ -540,6 +567,17 @@ async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: Ag
         print("WebSocket disconnected")
 
 #### END GTFS-RT Routes ####
+
+## To-do: Currently in progress - waiting for data pipeline to be completed
+# @app.get("/LACMTA/unique_shape_scheduled_stop_times/{route_code}/{direction_id}", response_model=List[schemas.UniqueShapeStopTimes])
+# async def get_unique_shape_by_scheduled_stop_times(route_code: str, direction_id: int, db: Session = Depends(get_db)):
+#     result = crud.get_unique_shape_scheduled_stop_times(db, route_code, direction_id)
+    
+#     if not result:
+#         raise HTTPException(status_code=404, detail="Data not found")
+    
+#     return result
+
 
 
 @app.get("/canceled_service_summary",tags=["Canceled Service Data"])
@@ -635,6 +673,19 @@ async def get_trip_shapes(agency_id: AgencyIdEnum,shape_id, db: Session = Depend
     else: 
         result = crud.get_trip_shape(db,shape_id,agency_id.value)
     return result
+
+@app.get("/{agency_id}/trip_shapes/routes/{route_code}", tags=["Dynamic data"])
+async def get_route_details(agency_id: AgencyIdEnum, route_code: str, db: Session = Depends(get_db)):
+    # Query the database for all trip_shapes associated with the route
+    trip_shapes = crud.get_trip_shapes_for_route(db, route_code, agency_id.value)
+
+    # For each trip_shape, query the database for all associated stops
+    for shape in trip_shapes:
+        shape_dict = {key: value for key, value in shape.__dict__.items() if not key.startswith('_')}
+        shape_dict['stops'] = crud.get_stops_for_trip_shape(db, shape_dict['shape_id'], agency_id.value)
+
+    # Return the trip_shapes and their associated stops
+    return trip_shapes
 
 @app.get("/{agency_id}/calendar/{service_id}",tags=["Static data"])
 async def get_calendar_list(agency_id: AgencyIdEnum,service_id, db: Session = Depends(get_db)):
