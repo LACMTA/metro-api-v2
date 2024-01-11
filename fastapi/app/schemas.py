@@ -64,7 +64,7 @@ class StopTimes(BaseModel):
     pickup_type: int
     drop_off_type: int
     trip_id_event: str
-    route_code: int
+    route_code: str
     destination_code: str
     timepoint: int
     bay_num: int
@@ -86,7 +86,7 @@ class Stops(BaseModel):
     geometry: str
 
 class Routes(BaseModel):
-    route_id: int
+    route_id: str
     route_short_name: str
     route_long_name: str
     route_desc: str
@@ -141,7 +141,7 @@ class StopTimeUpdates(BaseModel):
     # trip_update_id: int
 
 class Trips(BaseModel):
-    route_id: int
+    route_id: str
     service_id: str
     trip_id: str
     trip_headsign: str
@@ -160,10 +160,10 @@ class TripUpdates(BaseModel):
     direction_id: int
     timestamp: int
     agency_id: str
-    stop_time_json: Json
-    stop_time_updates: StopTimeUpdates
+    stop_time_json: str
     class Config:
         orm_mode = True
+
 class VehiclePositions(BaseModel):
     current_stop_sequence: int
     current_status: str
@@ -187,6 +187,12 @@ class VehiclePositions(BaseModel):
     agency_id: str
     timestamp: int
     geometry: str
+
+class UniqueShapeStopTimes(BaseModel):
+    stop_times: StopTimes
+    route_stops: RouteStops
+    trips: Trips
+    shapes: Shapes
 
 class GoPassSchools(BaseModel):
     phone: str

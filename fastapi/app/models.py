@@ -1,5 +1,6 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, ARRAY
 from sqlalchemy.orm import class_mapper
+from sqlalchemy.dialects.postgresql import ARRAY
 
 from geoalchemy2 import *
 from geoalchemy2.shape import to_shape
@@ -7,7 +8,7 @@ from geoalchemy2.elements import WKBElement
 from shapely.geometry import mapping
 from . import schemas
 
-from .gtfs_models import *
+import json
 
 from .database import Base
 
@@ -54,7 +55,7 @@ class CalendarDates(Base):
     exception_type = Column(Integer)
     agency_id = Column(String)
 
-class StopTimes(Base):
+class StopTimes(BaseModel):
     __tablename__ = "stop_times"
     arrival_time = Column(String)
     departure_time = Column(String)
@@ -64,12 +65,12 @@ class StopTimes(Base):
     pickup_type = Column(Integer)
     drop_off_type = Column(Integer)
     trip_id_event = Column(String,index=True)
-    route_code = Column(Integer,index=True)
+    route_code = Column(String,index=True)
     destination_code = Column(String,index=True)
     timepoint = Column(Integer)
     bay_num = Column(Integer)
     agency_id = Column(String)
-    trip_id = Column(Integer, primary_key=True,index=True)
+    trip_id = Column(String, primary_key=True,index=True)
     rider_usage_code = Column(Integer)
 
 class Stops(Base):
@@ -90,8 +91,8 @@ class Stops(Base):
 
 class Routes(Base):
     __tablename__ = "routes"
-    route_id = Column(Integer, primary_key=True, index=True)
-    route_short_name = Column(String)
+    route_id = Column(String, primary_key=True, index=True)
+    route_short_name = Column(String) 
     route_long_name = Column(String)
     route_desc = Column(String)
     route_type = Column(Integer)
@@ -102,7 +103,7 @@ class Routes(Base):
 
 class RouteOverview(Base):
     __tablename__ = "route_overview"
-    route_id = Column(Integer)
+    route_id = Column(String)
     route_code = Column(String,primary_key=True, index=True)
     route_code_padded= Column(Integer)
     route_short_name = Column(String)
@@ -135,8 +136,8 @@ class RouteStops(Base):
     geojson = Column(String)
     geometry = Column(Geometry('POINT', srid=4326))
     departure_times = Column(String)
-    latitude = Column(Float)
-    longitude = Column(Float)
+    # latitude = Column(Float)
+    # longitude = Column(Float)
     agency_id = Column(String)
 
 class RouteStopsGrouped(Base):
@@ -153,8 +154,8 @@ class TripShapes(Base):
 
 class Shapes(Base):
     __tablename__ = "shapes"
-    shape_id_sequence = Column(String, primary_key=True, index=True)
-    shape_id = Column(String)
+    # shape_id_sequence = Column(String, primary_key=True, index=True)
+    shape_id = Column(String, primary_key=True, index=True)
     shape_pt_lat = Column(Float)
     shape_pt_lon = Column(Float)
     geometry = Column(Geometry('POINT', srid=4326))
@@ -164,7 +165,7 @@ class Shapes(Base):
 
 class Trips(Base):
     __tablename__ = "trips"
-    route_id = Column(Integer, primary_key=True, index=True)
+    route_id = Column(String, primary_key=True, index=True)
     service_id = Column(String)
     trip_id = Column(String, index=True)
     trip_headsign = Column(String)
@@ -173,6 +174,12 @@ class Trips(Base):
     shape_id = Column(String)
     trip_id_event = Column(String)
     agency_id = Column(String)
+
+class TripShapeStops(Base):
+    __tablename__ = "trip_shape_stops"
+    trip_id = Column(String, primary_key=True, index=True)
+    stop_id = Column(Integer, index=True)
+    shape_id = Column(String, index=True)
     
 #### end gtfs static models
 
@@ -241,34 +248,40 @@ class User(Base):
 # TripUpdate
 # StopTimeUpdate
 # VehiclePosition
+import ast
 
+def convert_to_json(data):
+    try:
+        # Try to parse the string as JSON
+        return json.loads(data)
+    except json.JSONDecodeError:
+        try:
+            # If that fails, try to parse it as a Python literal
+            return ast.literal_eval(data)
+        except (ValueError, SyntaxError):
+            # If that fails, return the original string
+            return data
 class TripUpdates(BaseModel):
     __tablename__ = 'trip_updates'
-    # This replaces the TripDescriptor message
-    # TODO: figure out the relations
     trip_id = Column(String(64),primary_key=True,index=True)
     route_id = Column(String(64))
     start_time = Column(String(8))
     start_date = Column(String(10))
-    # Put in the string value not the enum
-    # TODO: add a domain
     schedule_relationship = Column(String(9))
     direction_id = Column(Integer)
-
     agency_id = Column(String)
-    # moved from the header, and reformatted as datetime
     timestamp = Column(Integer)
     stop_time_json = Column(String)
-    stop_time_updates = relationship('StopTimeUpdates', backref=backref('trip_updates',lazy="joined"))
-
-
+    @property
+    def stop_time_updates(self):
+        return convert_to_json(self.stop_time_json)
     class Config:
         schema_extra = {
             "definition": {
                 "comment": 
                 """
                 # Metro's bus agency id is "LACMTA"
-                # Metro's rail agency id is "LACMTA METRO
+                # Metro's rail agency id is "LACMTA rail"
                 """
             }
         }
@@ -277,7 +290,8 @@ class StopTimeUpdates(BaseModel):
     __tablename__ = 'stop_time_updates'
     stop_sequence = Column(Integer)
     stop_id = Column(String(10),primary_key=True,index=True)
-    trip_id = Column(String, ForeignKey('trip_updates.trip_id'))
+    trip_id = Column(String)
+    # trip_id = Column(String, ForeignKey('trip_updates.trip_id'))
     arrival = Column(Integer)
     departure = Column(Integer)
     agency_id = Column(String)
@@ -313,3 +327,13 @@ GTFSRTSqlAlchemyModels = {
     schemas.VehiclePositions: VehiclePositions,
 }
 GTFSRTClasses = (TripUpdates, StopTimeUpdates, VehiclePositions)
+
+class UniqueShapeStopTimes(BaseModel):
+    __tablename__ = "unique_shape_stop_times"
+
+    route_code = Column(String, primary_key=True)
+    direction_id = Column(Integer, primary_key=True)
+    day_of_week = Column(ARRAY(String))
+    trips = Column(ARRAY(String))
+    stops = Column(ARRAY(String))
+    departure_times = Column(ARRAY(String))

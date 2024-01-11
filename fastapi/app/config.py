@@ -61,7 +61,9 @@ def get_pgbouncer_uri(original_uri):
 class Config:
     BASE_URL = os.environ.get('BASE_URL')
     REDIS_URL = os.environ.get('REDIS_URL', 'redis://redis:6379')
-    TARGET_DB_SCHEMA = os.environ.get('TARGET_DB_SCHEMA')
+    TARGET_DB_SCHEMA = 'metro_api'
+    # TARGET_DB_SCHEMA = os.environ.get('TARGET_DB_SCHEMA')
+
     API_DB_URI = get_pgbouncer_uri(os.environ.get('API_DB_URI'))
     SECRET_KEY = os.environ.get('HASH_KEY')
     ALGORITHM = os.environ.get('HASHING_ALGORITHM')
