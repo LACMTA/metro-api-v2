@@ -270,19 +270,26 @@ async def get_unique_shape_scheduled_stop_times(db: AsyncSession, route_code: st
     result = await db.execute(stmt)
     return result.scalars().all()
 
-async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters: dict, geojson:bool, agency_id:str):
-    cache_key = f'trip_data:{str(filters)}:{agency_id}'
+async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters: dict, geojson:bool, agency_id:str, include_stop_time_updates: bool = False):
+    cache_key = f'trip_data:{str(filters)}:{agency_id}:{include_stop_time_updates}'
     if redis_connection is None:
         initialize_redis()
     cached_result = await redis_connection.get(cache_key)
     if cached_result is not None:
         return pickle.loads(cached_result)
 
-    stmt = (
-        select(models.VehiclePositions, models.TripUpdates.stop_time_json, models.StopTimes).
-        join(models.TripUpdates, models.VehiclePositions.trip_id == models.TripUpdates.trip_id).
-        join(models.StopTimes, models.VehiclePositions.trip_id == models.StopTimes.trip_id)
-    )
+    if include_stop_time_updates:
+        stmt = (
+            select(models.VehiclePositions, models.TripUpdates.stop_time_json, models.StopTimes).
+            join(models.TripUpdates, models.VehiclePositions.trip_id == models.TripUpdates.trip_id).
+            join(models.StopTimes, models.VehiclePositions.trip_id == models.StopTimes.trip_id)
+        )
+    else:
+        stmt = (
+            select(models.VehiclePositions, models.StopTimes).
+            join(models.TripUpdates, models.VehiclePositions.trip_id == models.TripUpdates.trip_id).
+            join(models.StopTimes, models.VehiclePositions.trip_id == models.StopTimes.trip_id)
+        )
 
     for key, value in filters.items():
         if key == 'stop_sequence':
@@ -297,15 +304,22 @@ async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters
     result = session.execute(stmt)
     vehicle_positions = []
 
-    for vp, stop_time_json, st in result:
+    for row in result:
+        vp = row[0]
         vp_dict = vp.to_dict()
-        vp_dict.update(st.to_dict())
-        if isinstance(stop_time_json, str):
-            try:
-                vp_dict['stop_time_updates'] = stop_time_json
-            except json.JSONDecodeError:
-                print(f"Error decoding JSON for stop_time_json: {stop_time_json}")
-                continue
+        if include_stop_time_updates:
+            stop_time_json = row[1]
+            st = row[2]
+            vp_dict.update(st.to_dict())
+            if isinstance(stop_time_json, str):
+                try:
+                    vp_dict['stop_time_updates'] = stop_time_json
+                except json.JSONDecodeError:
+                    print(f"Error decoding JSON for stop_time_json: {stop_time_json}")
+                    continue
+        else:
+            st = row[1]
+            vp_dict.update(st.to_dict())
         vehicle_positions.append(vp_dict)
 
     if geojson:
@@ -317,6 +331,30 @@ def get_unique_stop_ids(the_query):
         if row.stop_id not in stop_id_list:
             stop_id_list.append(row.stop_id)
     return stop_id_list
+
+### websocket endpoint handling
+def get_vehicle_positions_for_websocket(db: Session, agency_id: str):
+    # Try to get data from Redis cache first
+    cache_key = f'realtime_vehicle_websocket:{str(filters)}:{agency_id}:{include_stop_time_updates}'
+    if redis_connection is None:
+        initialize_redis()
+    cached_result = redis_connection.get(cache_key)
+    if cached_result is not None:
+        return pickle.loads(cached_result)
+
+    # If not in cache, query the database
+    data = db.query(models.VehiclePositions).filter_by(agency_id=agency_id).all()
+    data = [item.to_dict() for item in data]
+    for item in data:
+        if 'geometry' in item and isinstance(item['geometry'], WKBElement):
+            item['geometry'] = mapping(to_shape(item['geometry']))
+
+    # Store the result in Redis cache
+    redis_connection.set(agency_id, json.dumps(data))
+
+    return data
+
+
 
 async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str, geojson:bool,agency_id:str):
     the_query = await session.execute(select(models.StopTimeUpdates).where(models.StopTimeUpdates.route_code == route_code,models.StopTimeUpdates.agency_id == agency_id))
