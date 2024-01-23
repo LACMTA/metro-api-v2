@@ -10,7 +10,7 @@ import requests
 import csv
 import os
 import aioredis
-
+import asyncio
 import pytz
 import time
 
@@ -506,6 +506,60 @@ async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Option
 #### End Trip detail endpoints ####
 
 #### Websocket endpoints ####
+# ws://localhost:80/ws/LACMTA/trip_detail/route_code/720
+import json
+from geoalchemy2.shape import to_shape
+from shapely.geometry import mapping
+from geoalchemy2 import WKBElement
+
+@app.websocket("/ws/{agency_id}/vehicle_positions")
+async def websocket_endpoint(websocket: WebSocket, agency_id: str, db: Session = Depends(get_db)):
+    await websocket.accept()
+    while True:
+        try:
+            # Query the database directly
+            data = db.query(models.VehiclePositions).filter_by(agency_id=agency_id).all()
+            # Convert the data to dictionaries
+            data = [item.to_dict() for item in data]
+            for item in data:
+                # Convert WKBElement to GeoJSON
+                if 'geometry' in item and isinstance(item['geometry'], WKBElement):
+                    item['geometry'] = mapping(to_shape(item['geometry']))
+                await websocket.send_text(json.dumps(item))
+        except Exception as e:
+            await websocket.send_text(f"Error: {str(e)}")
+        await asyncio.sleep(1)  # Sleep for a bit to prevent flooding the client with messages
+
+@app.websocket("/ws/{agency_id}/trip_detail/route_code/{route_code}")
+async def websocket_endpoint(websocket: WebSocket, agency_id: str, route_code: str, db: AsyncSession = Depends(get_db)):
+    await websocket.accept()
+    route_codes = route_code.split(',')
+    while True:
+        try:
+            for route_code in route_codes:
+                data = await crud.get_all_data_websocket_async(db, models.VehiclePositions, agency_id, 'route_code', route_code)
+                for item in data:
+                    # Skip empty strings
+                    if item.strip() == '':
+                        continue
+                    # Parse item into a dictionary if it's a string
+                    if isinstance(item, str):
+                        item = json.loads(item)
+                    # Now item should be a dictionary, and you can access 'vehicle_position'
+                    if 'vehicle_position' in item:
+                        item_dict = item['vehicle_position']
+                    if 'trip_update' in item:
+                        item_dict.update(item['trip_update'])
+                    if 'stop_time' in item:
+                        stop_times_dict = item['stop_time']
+                        stop_times_dict['scheduled_departure_time'] = stop_times_dict.pop('departure_time', None)
+                        stop_times_dict['scheduled_arrival_time'] = stop_times_dict.pop('arrival_time', None)
+                        item_dict.update(stop_times_dict)
+                    await websocket.send_text(json.dumps(item_dict))
+        except Exception as e:
+            await websocket.send_text(f"Error: {str(e)}")
+
+
 
 @app.websocket("/ws/{agency_id}/vehicle_positions")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: AsyncSession = Depends(get_async_db)):
@@ -537,6 +591,8 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: Asy
         crud.redis_connection.unsubscribe('live_vehicle_positions')
         crud.redis_connection.close()
         await crud.redis_connection.wait_closed()
+from geojson import Feature, Point, FeatureCollection
+
 
 @app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
 async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, async_db: AsyncSession = Depends(get_async_db)):
