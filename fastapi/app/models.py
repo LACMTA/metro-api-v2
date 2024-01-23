@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, ARRAY
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, ARRAY, inspect
 from sqlalchemy.orm import class_mapper
 from sqlalchemy.dialects.postgresql import ARRAY
 
@@ -22,6 +22,8 @@ class BaseModel(Base):
         data = getattr(self, column.key)
         if isinstance(data, WKBElement):
             return mapping(to_shape(data))
+        elif isinstance(data, BaseModel):
+            return data.to_dict()
         return data
 
 class Agency(Base):
@@ -121,9 +123,12 @@ class RouteOverview(Base):
     pdf_file_url = Column(String)
     pdf_file_link = Column(String)
     iconography_url = Column(String)
+    shape_direction_0 = Column(Geometry('LINESTRING', srid=4326))
+    shape_direction_1 = Column(Geometry('LINESTRING', srid=4326))
     def to_dict(self):
         return {c.key: getattr(self, c.key) for c in class_mapper(self.__class__).columns}
 # route stops: route_id,stop_id,day_type,stop_sequence,direction_id,stop_name,coordinates,departure_times
+
 class RouteStops(Base):
     __tablename__ = "route_stops"
     route_id = Column(String, primary_key=True)
@@ -180,7 +185,13 @@ class TripShapeStops(Base):
     trip_id = Column(String, primary_key=True, index=True)
     stop_id = Column(Integer, index=True)
     shape_id = Column(String, index=True)
-    
+
+class TripDirection(Base):
+    __tablename__ = "trip_directions"
+    trip_id = Column(String, ForeignKey('trips.trip_id'), primary_key=True)
+    shape_id = Column(String, ForeignKey('trip_shapes.shape_id'))
+    direction_id = Column(Integer)
+
 #### end gtfs static models
 
 #### begin other models
@@ -320,6 +331,8 @@ class VehiclePositions(BaseModel):
     vehicle_label = Column(String)
     agency_id = Column(String)
     timestamp = Column(Integer)
+    def to_dict(self):
+        return {c.key: getattr(self, c.key) for c in inspect(self).mapper.column_attrs}
 # So one can loop over all classes to clear them for a new load (-o option)
 GTFSRTSqlAlchemyModels = {
     schemas.TripUpdates: TripUpdates,
