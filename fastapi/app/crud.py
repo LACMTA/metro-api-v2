@@ -160,17 +160,24 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
             return data
 
     # Query the database
-    if field_name and field_value:
-        stmt = select(model).where(text(f"{field_name} = :value"), getattr(model, 'agency_id') == agency_id).params(value=field_value)
-    else:
-        stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
-    result = await async_session.execute(stmt)
+    with async_session.no_autoflush:
+        if field_name and field_value:
+            stmt = select(model).where(text(f"{field_name} = :value"), getattr(model, 'agency_id') == agency_id).params(value=field_value)
+        else:
+            stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
+        result = await async_session.execute(stmt)
     data = result.scalars().all()
 
     # Convert WKBElement to a serializable format
     for item in data:
-        if 'geometry' in item and item['geometry'] is not None:
-            item['geometry'] = mapping(load_wkb(bytes(item['geometry'])))
+        if isinstance(item, models.RouteOverview):
+            if hasattr(item, 'shape_direction_0') and item.shape_direction_0 is not None:
+                item.shape_direction_0 = mapping(load_wkb(item.shape_direction_0.desc))
+            if hasattr(item, 'shape_direction_1') and item.shape_direction_1 is not None:
+                item.shape_direction_1 = mapping(load_wkb(item.shape_direction_1.desc))
+        else:
+            if hasattr(item, 'geometry') and item.geometry is not None:
+                item.geometry = mapping(load_wkb(bytes(item.geometry)))
 
     # Cache the result in Redis with the specified expiration time
     try:

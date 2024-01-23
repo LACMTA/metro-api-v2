@@ -82,7 +82,17 @@ SERVER_OVERLOAD_THRESHOLD = 1.2
 Page = Page.with_custom_options(
     size=Query(100, ge=1, le=500),
 )
+class CompactJSONResponse(JSONResponse):
+    media_type = "application/json"
 
+    def render(self, content: t.Any) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(',', ':'),
+            indent=None,
+        ).encode("utf-8")
 async def get_data(db: Session, key: str, fetch_func):
     # Get data from Redis
     data = await crud.redis_connection.get(key)
@@ -272,7 +282,7 @@ inspector = inspect(engine)
 
 from sqlalchemy import Table
 
-app = FastAPI(openapi_tags=tags_metadata,docs_url="/")
+app = FastAPI(openapi_tags=tags_metadata,docs_url="/",default_response_class=CompactJSONResponse)
 app.add_middleware(RateLimitMiddleware, limit=100, interval=60)
 
 # db = connect(host=''ort=0, timeout=None, source_address=None)
