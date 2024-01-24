@@ -111,7 +111,7 @@ class RouteOverview(Base):
     route_short_name = Column(String)
     route_long_name = Column(String)
     route_desc = Column(String)
-    route_type = Column(Integer)
+    route_type = Column(String)
     route_color = Column(String)
     route_text_color = Column(String)
     route_url = Column(String)
@@ -125,6 +125,16 @@ class RouteOverview(Base):
     iconography_url = Column(String)
     shape_direction_0 = Column(Geometry('LINESTRING', srid=4326))
     shape_direction_1 = Column(Geometry('LINESTRING', srid=4326))
+    terminal_1 = Column(String)
+    terminal_2 = Column(String)
+    arterials = Column(String)
+    description_0 = Column(String)
+    description_1 = Column(String)
+    display_order = Column(Integer)
+    travel_direction_0 = Column(String)
+    travel_direction_1 = Column(String)
+    is_active = Column(Boolean)
+
     def to_dict(self):
         return {c.key: getattr(self, c.key) for c in class_mapper(self.__class__).columns}
 # route stops: route_id,stop_id,day_type,stop_sequence,direction_id,stop_name,coordinates,departure_times
