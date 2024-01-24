@@ -177,7 +177,7 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
                 item.shape_direction_1 = mapping(load_wkb(item.shape_direction_1.desc))
         else:
             if hasattr(item, 'geometry') and item.geometry is not None:
-                item.geometry = mapping(load_wkb(bytes(item.geometry)))
+                item.geometry = mapping(load_wkb(bytes(item.geometry.desc, 'utf-8')))
 
     # Cache the result in Redis with the specified expiration time
     try:
