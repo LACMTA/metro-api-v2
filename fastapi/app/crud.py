@@ -747,9 +747,15 @@ def get_gtfs_route_stops(db,route_code,daytype,agency_id):
         return result
 
 
-def get_gtfs_route_stops_grouped(db,route_code,agency_id):
-    the_query = db.query(models.RouteStopsGrouped).filter(models.RouteStopsGrouped.route_code == route_code,models.RouteStopsGrouped.agency_id == agency_id).all()
-    return the_query
+async def get_gtfs_route_stops_grouped(async_session: Session, route_code: str, agency_id: str):
+    data = await get_data_async(
+        async_session,
+        models.RouteStopsGrouped,
+        agency_id,
+        field_name="route_code",
+        field_value=route_code,
+    )
+    return data
 # generic function to get the gtfs static data
 def get_gtfs_static_data(db, tablename,column_name,query,agency_id):
     aliased_table = aliased(tablename)

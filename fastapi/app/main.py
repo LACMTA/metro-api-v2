@@ -713,11 +713,24 @@ async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: 
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
-@app.get("/{agency_id}/route_stops_grouped/{route_code}",tags=["Static data"])
-async def populate_route_stops_grouped(agency_id: AgencyIdEnum,route_code:str, db: Session = Depends(get_db)):
-    result = crud.get_gtfs_route_stops_grouped(db,route_code,agency_id.value)
-    json_compatible_item_data = jsonable_encoder(result[0])
-    return JSONResponse(content=json_compatible_item_data)
+@app.get("/{agency_id}/route_stops_grouped/{route_code}", tags=["Static data"])
+async def get_route_stops_grouped_by_route_code(agency_id: AgencyIdEnum, route_code: str, async_db: AsyncSession = Depends(get_async_db)):
+    """
+    Get route stops grouped data by route code.
+    """
+    model = models.RouteStopsGrouped
+    if route_code.lower() == 'all':
+        # Return all routes
+        result = await crud.get_all_data_async(async_db, model, agency_id.value)
+    elif route_code.lower() == 'list':
+        # Return a list of route codes
+        result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id.value)
+    else:
+        # Return data for a specific route code
+        result = await crud.get_data_async(async_db, model, agency_id.value, 'route_code', route_code)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}")
+    return result
 
 @app.get("/calendar_dates",tags=["Static data"])
 async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
