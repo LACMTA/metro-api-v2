@@ -170,7 +170,7 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
 
     # Convert WKBElement to a serializable format
     for item in data:
-        if isinstance(item, models.RouteOverview):
+        if isinstance(item, models.RouteStopsGrouped):
             if hasattr(item, 'shape_direction_0') and item.shape_direction_0 is not None:
                 item.shape_direction_0 = mapping(load_wkb(item.shape_direction_0.desc))
             if hasattr(item, 'shape_direction_1') and item.shape_direction_1 is not None:
