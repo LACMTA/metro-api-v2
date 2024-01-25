@@ -123,8 +123,7 @@ class RouteOverview(Base):
     pdf_file_url = Column(String)
     pdf_file_link = Column(String)
     iconography_url = Column(String)
-    shape_direction_0 = Column(Geometry('LINESTRING', srid=4326))
-    shape_direction_1 = Column(Geometry('LINESTRING', srid=4326))
+
     terminal_1 = Column(String)
     terminal_2 = Column(String)
     arterials = Column(String)
@@ -160,6 +159,9 @@ class RouteStopsGrouped(Base):
     route_code = Column(String,primary_key=True, index=True)
     payload = Column(JSON)
     agency_id = Column(String)
+    shape_direction_0 = Column(Geometry('LINESTRING', srid=4326))
+    shape_direction_1 = Column(Geometry('LINESTRING', srid=4326))
+    geometry = Column(Geometry('POINT', srid=4326))
 
 class TripShapes(Base):
     __tablename__ = "trip_shapes"
