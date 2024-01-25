@@ -715,9 +715,14 @@ async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: 
 
 @app.get("/{agency_id}/route_stops_grouped/{route_code}",tags=["Static data"])
 async def populate_route_stops_grouped(agency_id: AgencyIdEnum,route_code:str, db: Session = Depends(get_db)):
-    result = crud.get_gtfs_route_stops_grouped(db,route_code,agency_id.value)
-    json_compatible_item_data = jsonable_encoder(result[0])
-    return JSONResponse(content=json_compatible_item_data)
+    result = await crud.get_gtfs_route_stops_grouped(db,route_code,agency_id.value)
+    if result:
+        data_dict = result[0].__dict__
+        data_dict.pop('_sa_instance_state', None)
+        json_compatible_item_data = jsonable_encoder(data_dict)
+        return JSONResponse(content=json_compatible_item_data)
+    else:
+        return JSONResponse(content={"error": f"No data found for the given route code {route_code} and agency id {agency_id.value}"}, status_code=404)
 
 @app.get("/calendar_dates",tags=["Static data"])
 async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
