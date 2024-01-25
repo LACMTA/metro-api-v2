@@ -154,7 +154,7 @@ class RouteStops(Base):
     # longitude = Column(Float)
     agency_id = Column(String)
 
-class RouteStopsGrouped(Base):
+class RouteStopsGrouped(BaseModel):
     __tablename__ = "route_stops_grouped"
     route_code = Column(String,primary_key=True, index=True)
     payload = Column(JSON)
