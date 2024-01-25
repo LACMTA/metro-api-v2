@@ -161,7 +161,6 @@ class RouteStopsGrouped(Base):
     agency_id = Column(String)
     shape_direction_0 = Column(Geometry('LINESTRING', srid=4326))
     shape_direction_1 = Column(Geometry('LINESTRING', srid=4326))
-    geometry = Column(Geometry('POINT', srid=4326))
 
 class TripShapes(Base):
     __tablename__ = "trip_shapes"
