@@ -2,7 +2,7 @@
 
 from sqlalchemy import create_engine,MetaData
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker,scoped_session
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.pool import NullPool
 
@@ -18,7 +18,8 @@ engine = create_engine(Config.API_DB_URI, echo=False, poolclass=NullPool)
 async_engine = create_async_engine(create_async_uri(Config.API_DB_URI), echo=False, poolclass=NullPool)
 async_session = sessionmaker(async_engine, expire_on_commit=False, class_=AsyncSession)
 Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
+session_factory = sessionmaker(bind=engine)
+scoped_session = scoped_session(session_factory)
 # LocalSession = sessionmaker(autocommit=False, autoflush=True, bind=async_engine, expire_on_commit=True)
 
 session = Session()
