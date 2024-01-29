@@ -346,27 +346,26 @@ def get_unique_stop_ids(the_query):
     return stop_id_list
 
 ### websocket endpoint handling
-def get_vehicle_positions_for_websocket(db: Session, agency_id: str):
+async def get_vehicle_positions_for_websocket(db: Session, agency_id: str):
     # Try to get data from Redis cache first
-    cache_key = f'realtime_vehicle_websocket:{str(filters)}:{agency_id}:{include_stop_time_updates}'
+    cache_key = f'realtime_vehicle_websocket:{agency_id}'
     if redis_connection is None:
         initialize_redis()
     cached_result = redis_connection.get(cache_key)
     if cached_result is not None:
-        return pickle.loads(cached_result)
+        return json.loads(cached_result)
 
     # If not in cache, query the database
     data = db.query(models.VehiclePositions).filter_by(agency_id=agency_id).all()
     data = [item.to_dict() for item in data]
     for item in data:
         if 'geometry' in item and isinstance(item['geometry'], WKBElement):
-            item['geometry'] = mapping(to_shape(item['geometry']))
+            item['geometry'] = mapping(item['geometry'])
 
     # Store the result in Redis cache
-    redis_connection.set(agency_id, json.dumps(data))
+    redis_connection.set(cache_key, json.dumps(data), ex=60)  # Set an expiration time of 60 seconds
 
     return data
-
 
 
 async def get_gtfs_rt_line_detail_updates_for_route_code(session,route_code: str, geojson:bool,agency_id:str):

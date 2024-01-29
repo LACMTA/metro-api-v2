@@ -56,7 +56,7 @@ from datetime import datetime, timedelta
 
 from .utils.log_helper import *
 
-from .database import Session, AsyncSession, engine, session, get_db,get_async_db
+from .database import Session, AsyncSession, engine, session,get_db,get_async_db
 from . import crud, models, security, schemas
 from .config import Config
 from pathlib import Path
@@ -510,11 +510,11 @@ from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
 from geoalchemy2 import WKBElement
 
-
 @app.websocket("/ws/{agency_id}/vehicle_positions")
-async def websocket_endpoint(websocket: WebSocket, agency_id: str, db: Session = Depends(get_db)):
+async def websocket_endpoint(websocket: WebSocket, agency_id: str):
     await websocket.accept()
-    redis = aioredis.Redis.from_url(Config.REDIS_URL, decode_responses=True)
+
+    redis = app.state.redis_pool
     psub = redis.pubsub()
 
     async def reader(channel: aioredis.client.PubSub):
@@ -529,25 +529,44 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, db: Session =
                                 await websocket.send_text(json.dumps(item))
                             except Exception as e:
                                 await websocket.send_text(f"Error: {str(e)}")
-                    await asyncio.sleep(0.01)
+                    await asyncio.sleep(0.1)
             except asyncio.TimeoutError:
                 pass
 
     async def publisher():
+        last_data = None
         while True:
             try:
-                # Query the database directly
-                data = db.query(models.VehiclePositions).filter_by(agency_id=agency_id).all()
-                # Convert the data to dictionaries
-                data = [item.to_dict() for item in data]
-                for item in data:
-                    # Convert WKBElement to GeoJSON
-                    if 'geometry' in item and isinstance(item['geometry'], WKBElement):
-                        item['geometry'] = mapping(to_shape(item['geometry']))
-                    # Only publish items that have a trip_id
-                    if item.get('trip_id') is not None:
-                        await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(item))
+                # Get a new session from the pool
+                db = Session()
+                # Try to get data from Redis cache first
+                cache_key = f'vehicle_positions_cache:{agency_id}'
+                cached_data = await redis.get(cache_key)
+                if cached_data is not None:
+                    data = json.loads(cached_data)
+                else:
+                    # If not in cache, query the database directly
+                    data = db.query(models.VehiclePositions).filter_by(agency_id=agency_id).all()
+                    # Convert the data to dictionaries
+                    data = [item.to_dict() for item in data]
+                    for item in data:
+                        # Convert WKBElement to GeoJSON
+                        if 'geometry' in item and isinstance(item['geometry'], WKBElement):
+                            item['geometry'] = mapping(to_shape(item['geometry']))
+                    # Store the result in Redis cache
+                    await redis.set(cache_key, json.dumps(data), ex=60)  # Set an expiration time of 60 seconds
+
+                # Only publish the data if it has changed
+                if data != last_data:
+                    for item in data:
+                        # Only publish items that have a trip_id
+                        if item.get('trip_id') is not None:
+                            await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(item))
+                    last_data = data
+
                 await asyncio.sleep(1)  # Sleep for a bit to prevent flooding the client with messages
+                # Close the session
+                Session.remove()
             except Exception as e:
                 print(f"Error: {str(e)}")
 
@@ -561,7 +580,9 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, db: Session =
 
     # closing all open connections
     await psub.close()
-
+    redis.close()
+    await redis.wait_closed()
+    
 @app.websocket("/ws/{agency_id}/trip_detail/route_code/{route_code}")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, route_code: str, db: AsyncSession = Depends(get_db)):
     await websocket.accept()
@@ -991,6 +1012,7 @@ class RedisNotConnected(Exception):
 async def startup_event():
     try:
         crud.redis_connection = crud.initialize_redis()
+        app.state.redis_pool = aioredis.from_url(Config.REDIS_URL, decode_responses=True)
         setup_logging()
     except Exception as e:
         print(f"Failed to connect to Redis: {e}")
