@@ -534,7 +534,6 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                 pass
 
     async def publisher():
-        last_data = None
         while True:
             try:
                 # Get a new session from the pool
@@ -556,17 +555,14 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                     # Store the result in Redis cache
                     await redis.set(cache_key, json.dumps(data), ex=60)  # Set an expiration time of 60 seconds
 
-                # Only publish the data if it has changed
-                if data != last_data:
-                    await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
-                    last_data = data
+                # Publish the data
+                await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
 
-                await asyncio.sleep(1)  # Sleep for a bit to prevent flooding the client with messages
+                await asyncio.sleep(2)  # Sleep for 2 seconds
                 # Close the session
                 Session.remove()
             except Exception as e:
                 print(f"Error: {str(e)}")
-
     # Start the publisher and reader as separate tasks
     asyncio.create_task(publisher())
 
