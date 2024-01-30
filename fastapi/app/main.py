@@ -558,10 +558,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
 
                 # Only publish the data if it has changed
                 if data != last_data:
-                    for item in data:
-                        # Only publish items that have a trip_id
-                        if item.get('trip_id') is not None:
-                            await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(item))
+                    await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
                     last_data = data
 
                 await asyncio.sleep(1)  # Sleep for a bit to prevent flooding the client with messages
