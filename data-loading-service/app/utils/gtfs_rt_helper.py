@@ -43,21 +43,16 @@ SWIFTLY_API_REALTIME = 'https://api.goswift.ly/real-time/'
 SWIFTLY_GTFS_RT_TRIP_UPDATES = 'gtfs-rt-trip-updates'
 SWIFTLY_GTFS_RT_VEHICLE_POSITIONS = 'gtfs-rt-vehicle-positions'
 
-# engine = create_engine(Config.API_DB_URI, echo=False,executemany_mode="values")
-
-# Session = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-# insp = inspect(engine)
-# session = Session()
-
 SERVICE_DICT = {
     'LACMTA': 'lametro',
     'LACMTA_Rail': 'lametro-rail'
 }
 
 SWIFTLY_AGENCY_IDS = ['LACMTA', 'LACMTA_Rail']
+import asyncio
 
 # Connect to the database
+
 def connect_to_db():
     try:
         print('Connecting to the database')
@@ -68,29 +63,6 @@ def connect_to_db():
         raise e
     finally:
         session.close()
-
-def connect_to_swiftly(service, endpoint):
-    swiftly_endpoint = ''
-    swiftly_endpoint = SWIFTLY_API_REALTIME + service + '/' + endpoint
-
-    if (service == 'lametro'):
-        key = Config.SWIFTLY_AUTH_KEY_BUS
-    elif (service == 'lametro-rail'):
-        key = Config.SWIFTLY_AUTH_KEY_RAIL
-    header = { 
-        "Authorization": key
-    }
-    try:
-        print('Connecting to Swiftly API: ' + swiftly_endpoint)
-        response = requests.get(swiftly_endpoint, headers=header)
-        print('Response status code: ' + str(response.status_code))
-        if (response.status_code == 200):
-            return response.content
-        else:
-            return False
-    except Exception as e:
-        print.exception('Error connecting to Swiftly API: ' + str(e))
-        return False
 
 def get_agency_id(service):
     if (service == 'bus'):
@@ -124,13 +96,41 @@ def get_route_code_from_trip_route_id(trip_id,agency_id):
         val = str(trip_id).split('-')[0]
     return val
 
-def update_gtfs_realtime_data():
+import aiohttp
+import asyncio
+
+async def connect_to_swiftly(service, endpoint):
+    swiftly_endpoint = SWIFTLY_API_REALTIME + service + '/' + endpoint
+
+    if (service == 'lametro'):
+        key = Config.SWIFTLY_AUTH_KEY_BUS
+    elif (service == 'lametro-rail'):
+        key = Config.SWIFTLY_AUTH_KEY_RAIL
+    header = { 
+        "Authorization": key
+    }
+    try:
+        print('Connecting to Swiftly API: ' + swiftly_endpoint)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(swiftly_endpoint, headers=header) as response:
+                print('Response status code: ' + str(response.status))
+                if (response.status == 200):
+                    return await response.read()
+                else:
+                    return False
+    except Exception as e:
+        print.exception('Error connecting to Swiftly API: ' + str(e))
+        return False
+
+async def update_gtfs_realtime_data():
     process_start = timeit.default_timer()
-    connect_to_db()
+    await connect_to_db()
     combined_trip_update_dataframes = []
     combined_stop_time_dataframes = []
     combined_vehicle_position_dataframes = []
-    
+
+    tasks = [process_agency(agency) for agency in SWIFTLY_AGENCY_IDS]
+    await asyncio.gather(*tasks)
     for agency in SWIFTLY_AGENCY_IDS:
         feed = FeedMessage()
         response_data = connect_to_swiftly(SERVICE_DICT[agency], SWIFTLY_GTFS_RT_TRIP_UPDATES)

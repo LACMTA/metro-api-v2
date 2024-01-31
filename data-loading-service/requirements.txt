@@ -25,3 +25,5 @@ polyline
 versiontag
 gitpython
 crython
+asyncio
+aiohttp
