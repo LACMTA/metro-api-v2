@@ -33,3 +33,5 @@ aioredis
 versiontag
 gitpython
 crython
+aiohttp
+asyncio
