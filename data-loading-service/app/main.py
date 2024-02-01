@@ -7,7 +7,7 @@ import utils.main_helper as main_helper
 import threading
 import time
 import pandas as pd
-import asyncio
+
 import crython
 
 lock = threading.Lock()
@@ -21,15 +21,12 @@ def retry_on_failure(task, retries=5, delay=15):
             print(f'Error on attempt {i+1}: {str(e)}')
             time.sleep(delay)
     raise Exception('Task failed after all retries')  # If all retries fail, raise an exception
-def run_coroutine(coro):
-    loop = asyncio.get_event_loop()
-    return loop.run_until_complete(coro)
 
 @crython.job(second='*/15')
 def gtfs_rt_scheduler():
     if not lock.locked():
         with lock:
-            retry_on_failure(run_coroutine(gtfs_rt_helper.update_gtfs_realtime_data))
+            retry_on_failure(gtfs_rt_helper.update_gtfs_realtime_data)
 
 @crython.job(expr='@daily')
 def go_pass_data_scheduler():
@@ -38,7 +35,7 @@ def go_pass_data_scheduler():
     except Exception as e:
         print('Error updating Go Pass data ' + str(e))
 
-@crython.job(expr='0 */15 * * * * *')
+@crython.job(expr='* */15 * * * * *')
 def canceled_trips_update_scheduler():
     try:
         update_canceled_trips.run_update()
