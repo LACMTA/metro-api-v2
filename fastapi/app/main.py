@@ -527,7 +527,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
         async def reader(channel: aioredis.client.PubSub):
             while True:
                 try:
-                    async with async_timeout.timeout(1):
+                    async with async_timeout.timeout(4.5):
                         message = await channel.get_message(ignore_subscribe_messages=True)
                         if message is not None:
                             if message["type"] == "message":
@@ -536,7 +536,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                                     await websocket.send_text(json.dumps(item))
                                 except Exception as e:
                                     await websocket.send_text(f"Error: {str(e)}")
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.5)
                 except asyncio.TimeoutError:
                     pass
 
@@ -563,7 +563,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                     # Publish the data
                     if data is not None:
                         await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
-                    await asyncio.sleep(3.6)  # Sleep for 3.6 seconds
+                    await asyncio.sleep(5)  # Sleep for 3.6 seconds
                 except Exception as e:
                     print(f"Error: {str(e)}")
         # Start the publisher and reader as separate tasks
