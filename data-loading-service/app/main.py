@@ -24,6 +24,7 @@ def retry_on_failure(task, retries=5, delay=15):
 def run_coroutine(coro):
     loop = asyncio.get_event_loop()
     return loop.run_until_complete(coro)
+
 @crython.job(second='*/15')
 def gtfs_rt_scheduler():
     if not lock.locked():
@@ -37,7 +38,7 @@ def go_pass_data_scheduler():
     except Exception as e:
         print('Error updating Go Pass data ' + str(e))
 
-@crython.job(expr='* */15 * * * * *')
+@crython.job(expr='*/15 * * * *')
 def canceled_trips_update_scheduler():
     try:
         update_canceled_trips.run_update()
