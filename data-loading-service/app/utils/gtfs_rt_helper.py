@@ -207,7 +207,10 @@ def update_gtfs_realtime_data():
     # logging('vehicle_position_updates Data Frame: ' + str(vehicle_position_updates))
     combined_trip_update_df = pd.concat(combined_trip_update_dataframes)
     combined_stop_time_df = pd.concat(combined_stop_time_dataframes)
+    combined_trip_update_df = combined_trip_update_df[combined_trip_update_df['trip_id'].notnull()]
+    combined_stop_time_df = combined_stop_time_df[combined_stop_time_df['trip_id'].notnull()]
     combined_vehicle_position_df = gpd.GeoDataFrame(pd.concat(combined_vehicle_position_dataframes, ignore_index=True), geometry='geometry')
+    combined_vehicle_position_df = combined_vehicle_position_df[combined_vehicle_position_df['trip_id'].notnull()]
     combined_vehicle_position_df.crs = 'EPSG:4326'
     combined_vehicle_position_df.to_postgis('vehicle_position_updates',engine,index=True,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
     combined_stop_time_df.to_sql('stop_time_updates',engine,index=True,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
