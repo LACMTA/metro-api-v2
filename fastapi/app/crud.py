@@ -46,6 +46,7 @@ import aioredis
 import pickle
 import time
 import logging
+import asyncio
 
 from sqlalchemy import select
 
@@ -61,23 +62,26 @@ from sqlalchemy.orm.decl_api import DeclarativeMeta
 
 redis_connection = None
 
-def initialize_redis(retries=5, delay=5):
+import asyncio
+
+async def initialize_redis(retries=5, delay=5):
     global redis_connection
     for i in range(retries):
         try:
             redis_connection = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
             # If connection is successful, break the loop
-            if redis_connection.ping():
+            if await redis_connection.ping():
                 break
         except Exception as e:
             print(f"Failed to connect to Redis: {e}")
             redis_connection = None
             if i < retries - 1:  # no delay on the last attempt
-                time.sleep(delay)
+                await asyncio.sleep(delay)
             else:
                 raise Exception("Failed to connect to Redis after several attempts")
 
-initialize_redis()
+# Create an event loop
+
 # import sqlalchemy
 
 def asdict(obj):

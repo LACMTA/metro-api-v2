@@ -22,9 +22,9 @@ def update_calendar_dates():
     calendar_dates_bus_data = StringIO(req.text)
     req = requests.get(CALENDAR_DATES_URL_RAIL, headers=headers)
     calendar_dates_rail_data = StringIO(req.text)
-    calendar_dates_df_bus = pd.read_csv(calendar_dates_bus_data)
+    calendar_dates_df_bus = pd.read_csv(calendar_dates_bus_data, error_bad_lines=False)
     calendar_dates_df_bus['agency_id'] = 'LACMTA'
-    calendar_dates_df_rail = pd.read_csv(calendar_dates_rail_data)
+    calendar_dates_df_rail = pd.read_csv(calendar_dates_rail_data, error_bad_lines=False)
     calendar_dates_df_rail['agency_id'] = 'LACMTA_Rail'
     calendar_dates_df = pd.concat([calendar_dates_df_bus, calendar_dates_df_rail])
     calendar_dates_df.to_sql('calendar_dates',engine,index=True,if_exists="replace",schema=Config.TARGET_DB_SCHEMA)
