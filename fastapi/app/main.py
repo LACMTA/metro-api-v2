@@ -434,7 +434,7 @@ async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum 
     Get all vehicle positions updates.
     """
     model = models.VehiclePositions
-    data = await crud.get_all_data_async(async_db, model, agency_id.value, cache_expiration=8)
+    data = await crud.get_all_data_async(async_db, model, agency_id.value, cache_expiration=6)
     if data is None:
         raise HTTPException(status_code=404, detail="Data not found")
     if format == FormatEnum.geojson:
@@ -558,8 +558,10 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                             response_data = await connect_to_swiftly(service, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
                             if response_data is not False:
                                 data = json.loads(response_data)
+                                # Filter out items with no trip_ids
+                                data = [item for item in data if item.get('trip_id')]
                                 # Store the result in Redis cache
-                                await redis.set(cache_key, json.dumps(data), ex=60)  # Set an expiration time of 60 seconds
+                                await redis.set(cache_key, json.dumps(data), ex=5)  # Set an expiration time of 60 seconds
                     # Publish the data
                     if data is not None:
                         await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
