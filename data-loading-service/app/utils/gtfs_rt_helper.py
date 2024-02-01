@@ -129,52 +129,52 @@ def update_gtfs_realtime_data():
             break
         feed.ParseFromString(response_data)
         
-        stop_time_array = [
-            {
-                'trip_id': entity.trip_update.trip.trip_id,
-                'stop_id': stop_time_update.stop_id,
-                'arrival': stop_time_update.arrival.time,
-                'departure': stop_time_update.departure.time,
-                'stop_sequence': stop_time_update.stop_sequence,
-                'agency_id': agency,
-                'schedule_relationship': stop_time_update.schedule_relationship if stop_time_update.schedule_relationship else -1,
-                'route_code': get_route_code_from_trip_route_id(entity.trip_update.trip.route_id,agency),
-                'start_time': entity.trip_update.trip.start_time,
-                'start_date': entity.trip_update.trip.start_date,
-                'direction_id': entity.trip_update.trip.direction_id
-            }
-            for entity in feed.entity
-            for stop_time_update in entity.trip_update.stop_time_update
-        ]
-        
-        trip_update_array = [
-            {
+        trip_update_array = []
+        stop_time_array = []
+        vehicle_position_update_array = []
+        for entity in feed.entity:
+            this_stop_time_json_array = []            
+            for stop_time_update in entity.trip_update.stop_time_update:
+                schedule_relationship_value = -1
+                if stop_time_update.schedule_relationship:
+                    schedule_relationship_value = stop_time_update.schedule_relationship
+                this_stop_time_json={
+                    'trip_id': entity.trip_update.trip.trip_id,
+                    'stop_id': stop_time_update.stop_id,
+                    'arrival': stop_time_update.arrival.time,
+                    'departure': stop_time_update.departure.time,
+                    'stop_sequence': stop_time_update.stop_sequence,
+                    'agency_id': agency,
+                    'schedule_relationship': schedule_relationship_value
+                }
+                stop_time_json_extra_fields = this_stop_time_json
+                stop_time_json_extra_fields['route_code'] = get_route_code_from_trip_route_id(entity.trip_update.trip.route_id,agency)
+                stop_time_json_extra_fields['start_time'] = entity.trip_update.trip.start_time
+                stop_time_json_extra_fields['start_date'] = entity.trip_update.trip.start_date
+                stop_time_json_extra_fields['direction_id'] = entity.trip_update.trip.direction_id
+
+                stop_time_array.append(stop_time_json_extra_fields)
+                this_stop_time_json_array.append(this_stop_time_json)
+            string_of_json = str(this_stop_time_json_array)
+            trip_update_array.append({
                 'trip_id': entity.trip_update.trip.trip_id,
                 'route_id': entity.trip_update.trip.route_id,
                 'start_time': entity.trip_update.trip.start_time,
                 'start_date': entity.trip_update.trip.start_date,
                 'direction_id': entity.trip_update.trip.direction_id,
-                'stop_time_json': str([
-                    {
-                        'trip_id': entity.trip_update.trip.trip_id,
-                        'stop_id': stop_time_update.stop_id,
-                        'arrival': stop_time_update.arrival.time,
-                        'departure': stop_time_update.departure.time,
-                        'stop_sequence': stop_time_update.stop_sequence,
-                        'agency_id': agency,
-                        'schedule_relationship': stop_time_update.schedule_relationship if stop_time_update.schedule_relationship else -1
-                    }
-                    for stop_time_update in entity.trip_update.stop_time_update
-                ]),
+                'stop_time_json': string_of_json,
                 'schedule_relationship': entity.trip_update.trip.schedule_relationship,
                 'agency_id': agency,
                 'timestamp': entity.trip_update.timestamp
-            }
-            for entity in feed.entity
-        ]
-        
-        combined_stop_time_dataframes.append(pd.DataFrame(stop_time_array))
-        combined_trip_update_dataframes.append(pd.DataFrame(trip_update_array))
+            })
+        stop_time_df = pd.DataFrame(stop_time_array)
+        del stop_time_array
+        # stop_time_df = pd.DataFrame(stop_time_array, columns=['trip_id', 'stop_id', 'arrival', 'departure', 'stop_sequence', 'agency_id', 'schedule_relationship'], dtype='[string, string, int8, int8, int8, string, int8]')
+        combined_stop_time_dataframes.append(stop_time_df)
+        trip_update_df = pd.DataFrame(trip_update_array)
+        del trip_update_array
+        combined_trip_update_dataframes.append(trip_update_df)
+
         vehicle_positions_feed = FeedMessage()
         response_data = connect_to_swiftly(SERVICE_DICT[agency], SWIFTLY_GTFS_RT_VEHICLE_POSITIONS)
         vehicle_positions_feed.ParseFromString(response_data)
