@@ -38,7 +38,7 @@ def go_pass_data_scheduler():
     except Exception as e:
         print('Error updating Go Pass data ' + str(e))
 
-@crython.job(expr='*/15 * * * *')
+@crython.job(expr='0 */15 * * * * *')
 def canceled_trips_update_scheduler():
     try:
         update_canceled_trips.run_update()
