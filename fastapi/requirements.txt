@@ -33,4 +33,4 @@ fastapi-pagination
 geojson
 pytest
 asyncpg
-httpx
+aiohttp

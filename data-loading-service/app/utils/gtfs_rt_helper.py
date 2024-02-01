@@ -6,8 +6,6 @@ from cgi import print_arguments
 import datetime
 from multiprocessing.resource_sharer import stop
 import time 
-# from ..gtfs_rt import *
-# from ..models import *
 
 from sqlalchemy.exc import ProgrammingError
 
@@ -28,7 +26,6 @@ from config import Config
 from utils.gtfs_realtime_pb2 import FeedMessage
 from .database_connector import *
 
-# from ..schemas import TripUpdates, StopTimeUpdates,VehiclePositions
 from datetime import datetime
 
 
@@ -39,16 +36,7 @@ STOP_TIMES_ENDPOINT = API_URL + 'bus/stop_times/'
 STOPS_ENDPOINT = API_URL + 'bus/stops/'
 
 
-SWIFTLY_API_REALTIME = 'https://api.goswift.ly/real-time/'
-SWIFTLY_GTFS_RT_TRIP_UPDATES = 'gtfs-rt-trip-updates'
-SWIFTLY_GTFS_RT_VEHICLE_POSITIONS = 'gtfs-rt-vehicle-positions'
 
-SERVICE_DICT = {
-    'LACMTA': 'lametro',
-    'LACMTA_Rail': 'lametro-rail'
-}
-
-SWIFTLY_AGENCY_IDS = ['LACMTA', 'LACMTA_Rail']
 import asyncio
 
 # Connect to the database
@@ -99,6 +87,17 @@ def get_route_code_from_trip_route_id(trip_id,agency_id):
 import aiohttp
 import asyncio
 
+SWIFTLY_API_REALTIME = 'https://api.goswift.ly/real-time/'
+SWIFTLY_GTFS_RT_TRIP_UPDATES = 'gtfs-rt-trip-updates'
+SWIFTLY_GTFS_RT_VEHICLE_POSITIONS = 'gtfs-rt-vehicle-positions'
+
+SERVICE_DICT = {
+    'LACMTA': 'lametro',
+    'LACMTA_Rail': 'lametro-rail'
+}
+
+SWIFTLY_AGENCY_IDS = ['LACMTA', 'LACMTA_Rail']
+
 async def connect_to_swiftly(service, endpoint):
     swiftly_endpoint = SWIFTLY_API_REALTIME + service + '/' + endpoint
 
@@ -121,6 +120,15 @@ async def connect_to_swiftly(service, endpoint):
     except Exception as e:
         print.exception('Error connecting to Swiftly API: ' + str(e))
         return False
+def process_agency(agency_id):
+    # Connect to the Swiftly API and fetch data for the given agency ID
+    data = connect_to_swiftly(agency_id)
+
+    # Process the data (this will depend on your specific requirements)
+    processed_data = process_data(data)
+
+    # Return the processed data
+    return processed_data
 
 async def update_gtfs_realtime_data():
     process_start = timeit.default_timer()
