@@ -533,7 +533,10 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                             if message["type"] == "message":
                                 try:
                                     item = json.loads(message['data'])
-                                    await websocket.send_text(json.dumps(item))
+                                    if item == 'ping':
+                                        await websocket.send_text('pong')
+                                    else:
+                                        await websocket.send_text(json.dumps(item))
                                 except Exception as e:
                                     await websocket.send_text(f"Error: {str(e)}")
                         await asyncio.sleep(0.5)
