@@ -539,7 +539,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                                         await websocket.send_text(json.dumps(item))
                                 except Exception as e:
                                     await websocket.send_text(f"Error: {str(e)}")
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(3)
                 except asyncio.TimeoutError:
                     pass
 
