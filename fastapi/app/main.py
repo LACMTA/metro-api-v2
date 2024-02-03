@@ -527,7 +527,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
         async def reader(channel: aioredis.client.PubSub):
             while True:
                 try:
-                    async with async_timeout.timeout(4.5):
+                    async with async_timeout.timeout(2.5):  # Set a timeout of 2.5 seconds
                         message = await channel.get_message(ignore_subscribe_messages=True)
                         if message is not None:
                             if message["type"] == "message":
@@ -564,7 +564,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                                 # Filter out items with no trip_ids
                                 data = [item for item in data if item.get('trip_id')]
                                 # Store the result in Redis cache
-                                await redis.set(cache_key, json.dumps(data), ex=5)  # Set an expiration time of 60 seconds
+                                await redis.set(cache_key, json.dumps(data), ex=3)  # Set an expiration time of 3 seconds
                     # Publish the data
                     if data is not None:
                         await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
