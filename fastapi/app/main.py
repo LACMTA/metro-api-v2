@@ -568,7 +568,7 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str):
                     # Publish the data
                     if data is not None:
                         await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
-                    await asyncio.sleep(4)  # Sleep for 3.6 seconds
+                    await asyncio.sleep(5)  # Sleep for 3.6 seconds
                 except Exception as e:
                     print(f"Error: {str(e)}")
         # Start the publisher and reader as separate tasks
