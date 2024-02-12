@@ -34,3 +34,4 @@ fastapi-pagination
 geojson
 pytest
 pickle
+aiohttp

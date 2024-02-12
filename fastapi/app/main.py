@@ -434,7 +434,7 @@ async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum 
     Get all vehicle positions updates.
     """
     model = models.VehiclePositions
-    data = await crud.get_all_data_async(async_db, model, agency_id.value, cache_expiration=8)
+    data = await crud.get_all_data_async(async_db, model, agency_id.value, cache_expiration=6)
     if data is None:
         raise HTTPException(status_code=404, detail="Data not found")
     if format == FormatEnum.geojson:
@@ -510,72 +510,147 @@ from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
 from geoalchemy2 import WKBElement
 
+
+from .utils.gtfs_rt_swiftly import connect_to_swiftly, SWIFTLY_API_REALTIME, SWIFTLY_GTFS_RT_TRIP_UPDATES, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS, SERVICE_DICT
+
+connected_clients = 0
+
 @app.websocket("/ws/{agency_id}/vehicle_positions")
-async def websocket_endpoint(websocket: WebSocket, agency_id: str):
-    await websocket.accept()
+async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: str):
+    global connected_clients
+    connected_clients += 1
+    try:
+        await websocket.accept()
 
-    redis = app.state.redis_pool
-    psub = redis.pubsub()
+        redis = app.state.redis_pool
+        psub = redis.pubsub()
 
-    async def reader(channel: aioredis.client.PubSub):
-        while True:
-            try:
-                async with async_timeout.timeout(1):
-                    message = await channel.get_message(ignore_subscribe_messages=True)
-                    if message is not None:
-                        if message["type"] == "message":
-                            try:
-                                item = json.loads(message['data'])
-                                await websocket.send_text(json.dumps(item))
-                            except Exception as e:
-                                await websocket.send_text(f"Error: {str(e)}")
-                    await asyncio.sleep(0.1)
-            except asyncio.TimeoutError:
-                pass
+        async def reader(channel: aioredis.client.PubSub):
+            while True:
+                try:
+                    async with async_timeout.timeout(1):
+                        message = await channel.get_message(ignore_subscribe_messages=True)
+                        if message is not None:
+                            if message["type"] == "message":
+                                try:
+                                    item = json.loads(message['data'])
+                                    await websocket.send_text(json.dumps(item))
+                                except Exception as e:
+                                    await websocket.send_text(f"Error: {str(e)}")
+                        await asyncio.sleep(0.1)
+                except asyncio.TimeoutError:
+                    pass
 
-    async def publisher():
-        while True:
-            try:
-                # Get a new session from the pool
-                db = Session()
-                # Try to get data from Redis cache first
-                cache_key = f'vehicle_positions_cache:{agency_id}'
-                cached_data = await redis.get(cache_key)
-                if cached_data is not None:
-                    data = json.loads(cached_data)
-                else:
-                    # If not in cache, query the database directly
-                    data = db.query(models.VehiclePositions).filter_by(agency_id=agency_id).all()
-                    # Convert the data to dictionaries
-                    data = [item.to_dict() for item in data]
-                    for item in data:
-                        # Convert WKBElement to GeoJSON
-                        if 'geometry' in item and isinstance(item['geometry'], WKBElement):
-                            item['geometry'] = mapping(to_shape(item['geometry']))
-                    # Store the result in Redis cache
-                    await redis.set(cache_key, json.dumps(data), ex=60)  # Set an expiration time of 60 seconds
+        async def publisher():
+            global connected_clients
+            data = None  # Cache the data in memory
+            while True:
+                try:
+                    # Only fetch data if there are connected clients
+                    if connected_clients > 0:
+                        # Try to get data from Redis cache first
+                        cache_key = f'vehicle_positions_cache:{agency_id}'
+                        cached_data = await redis.get(cache_key)
+                        if cached_data is not None:
+                            data = json.loads(cached_data)
+                        else:
+                            # If not in cache, fetch data from the Swiftly API
+                            service = SERVICE_DICT[agency_id]
+                            response_data = await connect_to_swiftly(service, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
+                            if response_data is not False:
+                                data = json.loads(response_data)
+                                # Store the result in Redis cache
+                                await redis.set(cache_key, json.dumps(data), ex=5)  # Set an expiration time of 5 seconds
+                    # Publish the data
+                    if data is not None:
+                        await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
+                    await asyncio.sleep(3.6)  # Sleep for 3.6 seconds
+                except Exception as e:
+                    print(f"Error: {str(e)}")
+        # Start the publisher and reader as separate tasks
+        asyncio.create_task(publisher())
 
-                # Publish the data
-                await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
+        async with psub as p:
+            await p.subscribe(f'vehicle_positions_{agency_id}')
+            await reader(p)  # wait for reader to complete
+            await p.unsubscribe(f'vehicle_positions_{agency_id}')
 
-                await asyncio.sleep(2)  # Sleep for 2 seconds
-                # Close the session
-                Session.remove()
-            except Exception as e:
-                print(f"Error: {str(e)}")
-    # Start the publisher and reader as separate tasks
-    asyncio.create_task(publisher())
-
-    async with psub as p:
-        await p.subscribe(f'vehicle_positions_{agency_id}')
-        await reader(p)  # wait for reader to complete
-        await p.unsubscribe(f'vehicle_positions_{agency_id}')
+    finally:
+        connected_clients -= 1
 
     # closing all open connections
     await psub.close()
     redis.close()
     await redis.wait_closed()
-    
+
+@app.websocket("/ws/{agency_id}/trip_updates")
+async def websocket_trip_updates_endpoint(websocket: WebSocket, agency_id: str):
+    global connected_clients
+    connected_clients += 1
+    try:
+        await websocket.accept()
+
+        redis = app.state.redis_pool
+        psub = redis.pubsub()
+
+        async def reader(channel: aioredis.client.PubSub):
+            while True:
+                try:
+                    async with async_timeout.timeout(1):
+                        message = await channel.get_message(ignore_subscribe_messages=True)
+                        if message is not None:
+                            if message["type"] == "message":
+                                try:
+                                    item = json.loads(message['data'])
+                                    await websocket.send_text(json.dumps(item))
+                                except Exception as e:
+                                    await websocket.send_text(f"Error: {str(e)}")
+                        await asyncio.sleep(0.1)
+                except asyncio.TimeoutError:
+                    pass
+
+        async def publisher():
+            global connected_clients
+            data = None  # Cache the data in memory
+            while True:
+                try:
+                    # Only fetch data if there are connected clients
+                    if connected_clients > 0:
+                        # Try to get data from Redis cache first
+                        cache_key = f'trip_updates_cache:{agency_id}'
+                        cached_data = await redis.get(cache_key)
+                        if cached_data is not None:
+                            data = json.loads(cached_data)
+                        else:
+                            # If not in cache, fetch data from the Swiftly API
+                            service = SERVICE_DICT[agency_id]
+                            response_data = await connect_to_swiftly(service, SWIFTLY_GTFS_RT_TRIP_UPDATES, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
+                            if response_data is not False:
+                                data = json.loads(response_data)
+                                # Store the result in Redis cache
+                                await redis.set(cache_key, json.dumps(data), ex=15)  # Set an expiration time of 60 seconds
+                    # Publish the data
+                    if data is not None:
+                        await redis.publish(f'trip_updates_{agency_id}', json.dumps(data))
+                    await asyncio.sleep(3.6)  # Sleep for 3.6 seconds
+                except Exception as e:
+                    print(f"Error: {str(e)}")
+        # Start the publisher and reader as separate tasks
+        asyncio.create_task(publisher())
+
+        async with psub as p:
+            await p.subscribe(f'trip_updates_{agency_id}')
+            await reader(p)  # wait for reader to complete
+            await p.unsubscribe(f'trip_updates_{agency_id}')
+
+    finally:
+        connected_clients -= 1
+
+    # closing all open connections
+    await psub.close()
+    redis.close()
+    await redis.wait_closed()
+
 @app.websocket("/ws/{agency_id}/trip_detail/route_code/{route_code}")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, route_code: str, db: AsyncSession = Depends(get_db)):
     await websocket.accept()
@@ -605,39 +680,6 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, route_code: s
         except Exception as e:
             await websocket.send_text(f"Error: {str(e)}")
 
-
-
-@app.websocket("/ws/{agency_id}/vehicle_positions")
-async def websocket_endpoint(websocket: WebSocket, agency_id: str, async_db: AsyncSession = Depends(get_async_db)):
-    await websocket.accept()
-
-    channel = (await crud.redis_connection.subscribe('live_vehicle_positions'))[0]
-
-    async def listen_to_redis():
-        async for message in channel.iter(encoding='utf-8'):
-            # Unserialize message with json before sending
-            message_data = json.loads(message)
-            await websocket.send_json(message_data)
-
-    listen_task = asyncio.create_task(listen_to_redis())
-
-    try:
-        data = await asyncio.wait_for(crud.get_all_data_async(async_db, models.VehiclePositions, agency_id), timeout=120)
-        if data is not None:
-            # Serialize data with json before publishing
-            data_json = json.dumps(data)
-            await crud.redis_connection.publish('live_vehicle_positions', data_json)
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=408, detail="Request timed out")
-    except WebSocketDisconnect:
-        # Handle the WebSocket disconnect event
-        print("WebSocket disconnected")
-    finally:
-        listen_task.cancel()
-        crud.redis_connection.unsubscribe('live_vehicle_positions')
-        crud.redis_connection.close()
-        await crud.redis_connection.wait_closed()
-from geojson import Feature, Point, FeatureCollection
 
 
 @app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
