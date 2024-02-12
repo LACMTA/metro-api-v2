@@ -29,6 +29,9 @@ Base = declarative_base(metadata=MetaData(schema=Config.TARGET_DB_SCHEMA))
 def get_db():
     db = Session()
     try:
+        db.execute("SET log_statement_stats = OFF;")
+        db.execute("SET log_duration = OFF;")
+        db.execute("SET log_connections = OFF;")
         yield db
     finally:
         db.close()
@@ -36,6 +39,9 @@ def get_db():
 async def get_async_db():
     async with async_session() as asyncdb:
         try:
+            await asyncdb.execute("SET log_statement_stats = OFF;")
+            await asyncdb.execute("SET log_duration = OFF;")
+            await asyncdb.execute("SET log_connections = OFF;")
             yield asyncdb
         finally:
             await asyncdb.close()
