@@ -27,3 +27,4 @@ gitpython
 crython
 asyncio
 aiohttp
+websockets
