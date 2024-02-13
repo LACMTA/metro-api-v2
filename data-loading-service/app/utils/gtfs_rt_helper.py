@@ -13,6 +13,7 @@ import json
 import requests
 import pandas as pd
 import geopandas as gpd
+import websockets
 
 import timeit
 from datetime import datetime
@@ -28,7 +29,6 @@ from .database_connector import *
 
 # from ..schemas import TripUpdates, StopTimeUpdates,VehiclePositions
 from datetime import datetime
-
 
 API_URL = 'https://api.metro.net/'
 VEHICLE_POSITIONS_ENDPOINT = API_URL + 'vehicle_positions/bus?output_format=json'
@@ -122,19 +122,26 @@ def get_route_code_from_trip_route_id(trip_id,agency_id):
         val = str(trip_id).split('-')[0]
     return val
 
-def update_gtfs_realtime_data():
+async def update_gtfs_realtime_data():
     process_start = timeit.default_timer()
     connect_to_db()
     combined_trip_update_dataframes = []
     combined_stop_time_dataframes = []
     combined_vehicle_position_dataframes = []
-    
-    for agency in SWIFTLY_AGENCY_IDS:
-        feed = FeedMessage()
-        response_data = connect_to_swiftly(SERVICE_DICT[agency], SWIFTLY_GTFS_RT_TRIP_UPDATES)
-        if response_data == False:
-            break
-        feed.ParseFromString(response_data)
+    websocket_endpoints = [
+    'wss://api.metro.net/ws/LACMTA_Rail/vehicle_positions',
+    'wss://api.metro.net/ws/LACMTA/vehicle_positions',
+    'wss://api.metro.net/ws/LACMTA_Rail/trip_updates',
+    'wss://api.metro.net/ws/LACMTA/trip_updates'
+    ]
+
+    for endpoint in websocket_endpoints:
+        async with websockets.connect(endpoint) as websocket:
+            feed = FeedMessage()
+            response_data = await websocket.recv()
+            if not response_data:
+                break
+            feed.ParseFromString(response_data)
         
         trip_update_array = []
         stop_time_array = []
