@@ -131,8 +131,8 @@ async def update_gtfs_realtime_data():
     websocket_endpoints = [
     'wss://api.metro.net/ws/LACMTA_Rail/vehicle_positions',
     'wss://api.metro.net/ws/LACMTA/vehicle_positions',
-    'wss://api.metro.net/ws/LACMTA_Rail/trip_details',
-    'wss://api.metro.net/ws/LACMTA/trip_details'
+    'wss://api.metro.net/ws/LACMTA_Rail/trip_updates',
+    'wss://api.metro.net/ws/LACMTA/trip_updates'
     ]
 
     for endpoint in websocket_endpoints:
