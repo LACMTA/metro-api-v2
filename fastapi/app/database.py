@@ -36,9 +36,6 @@ def get_db():
 async def get_async_db():
     async with async_session() as asyncdb:
         try:
-            await asyncdb.execute("SET log_statement_stats = OFF;")
-            await asyncdb.execute("SET log_duration = OFF;")
-            await asyncdb.execute("SET log_connections = OFF;")
             yield asyncdb
         finally:
             await asyncdb.close()
