@@ -29,9 +29,6 @@ Base = declarative_base(metadata=MetaData(schema=Config.TARGET_DB_SCHEMA))
 def get_db():
     db = Session()
     try:
-        db.execute("SET log_statement_stats = OFF;")
-        db.execute("SET log_duration = OFF;")
-        db.execute("SET log_connections = OFF;")
         yield db
     finally:
         db.close()
