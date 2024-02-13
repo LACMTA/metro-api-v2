@@ -379,97 +379,96 @@ GO_PASS_UPDATE_INTERVAL = 3600
 ####################
 #### Begin GTFS-RT Routes ####
 
-@app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])    
-async def get_all_trip_updates(agency_id: AgencyIdEnum, async_db: AsyncSession = Depends(get_async_db)):
-    """
-    Get all trip updates.
-    """
-    model = models.TripUpdates
-    data = await crud.get_all_data_async(async_db, model, agency_id.value)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Data not found")
-    return data
+# @app.get("/{agency_id}/trip_updates", tags=["Real-Time data"])    
+# async def get_all_trip_updates(agency_id: AgencyIdEnum, async_db: AsyncSession = Depends(get_async_db)):
+#     """
+#     Get all trip updates.
+#     """
+#     model = models.TripUpdates
+#     data = await crud.get_all_data_async(async_db, model, agency_id.value)
+#     if data is None:
+#         raise HTTPException(status_code=404, detail="Data not found")
+#     return data
 
-@app.get("/{agency_id}/trip_updates/{field}/{ids}", tags=["Real-Time data"])    
-async def get_trip_updates_by_ids(agency_id: AgencyIdEnum, field: TripUpdatesFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
-    """
-    Get specific trip updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
-    """
-    model = models.TripUpdates
-    data = {}
-    if "," in ids:
-        ids = ids.split(',')
-        for id in ids:
-            result = await crud.get_data_async(async_db, model, agency_id.value, field.value, id)
-            if result is None:
-                raise HTTPException(status_code=404, detail=f"Data not found for ID {id}")
-            if format == FormatEnum.geojson:
-                # Convert data to GeoJSON format
-                result = to_geojson(result)
-            data[id] = result
-    else:
-        result = await crud.get_data_async(async_db, model, agency_id.value, field.value, ids)
-        if result is None:
-            raise HTTPException(status_code=404, detail=f"Data not found for ID {ids}")
-        if format == FormatEnum.geojson:
-            # Convert data to GeoJSON format
-            result = to_geojson(result)
-        data[ids] = result
-    return data
+# @app.get("/{agency_id}/trip_updates/{field}/{ids}", tags=["Real-Time data"])    
+# async def get_trip_updates_by_ids(agency_id: AgencyIdEnum, field: TripUpdatesFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+#     """
+#     Get specific trip updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
+#     """
+#     model = models.TripUpdates
+#     data = {}
+#     if "," in ids:
+#         ids = ids.split(',')
+#         for id in ids:
+#             result = await crud.get_data_async(async_db, model, agency_id.value, field.value, id)
+#             if result is None:
+#                 raise HTTPException(status_code=404, detail=f"Data not found for ID {id}")
+#             if format == FormatEnum.geojson:
+#                 # Convert data to GeoJSON format
+#                 result = to_geojson(result)
+#             data[id] = result
+#     else:
+#         result = await crud.get_data_async(async_db, model, agency_id.value, field.value, ids)
+#         if result is None:
+#             raise HTTPException(status_code=404, detail=f"Data not found for ID {ids}")
+#         if format == FormatEnum.geojson:
+#             # Convert data to GeoJSON format
+#             result = to_geojson(result)
+#         data[ids] = result
+#     return data
 
-@app.get("/{agency_id}/trip_updates/{field}", tags=["Real-Time data"])     
-async def get_list_of_field_values(agency_id: AgencyIdEnum, field: TripUpdatesFieldsEnum, async_db: AsyncSession = Depends(get_async_db)):
-    """
-    Get a list of all values for a specific field in the trip updates.
-    """
-    model = models.TripUpdates
-    data = await crud.get_list_of_unique_values_async(async_db, model, agency_id.value, field.value)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Data not found")
-    return data
+# @app.get("/{agency_id}/trip_updates/{field}", tags=["Real-Time data"])     
+# async def get_list_of_field_values(agency_id: AgencyIdEnum, field: TripUpdatesFieldsEnum, async_db: AsyncSession = Depends(get_async_db)):
+#     """
+#     Get a list of all values for a specific field in the trip updates.
+#     """
+#     model = models.TripUpdates
+#     data = await crud.get_list_of_unique_values_async(async_db, model, agency_id.value, field.value)
+#     if data is None:
+#         raise HTTPException(status_code=404, detail="Data not found")
+#     return data
 
-@app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])    
-async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
-    """
-    Get all vehicle positions updates.
-    """
-    model = models.VehiclePositions
-    data = await crud.get_all_data_async(async_db, model, agency_id.value, cache_expiration=6)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Data not found")
-    if format == FormatEnum.geojson:
-        # Convert data to GeoJSON format
-        data = to_geojson(data)
-    return data
+# @app.get("/{agency_id}/vehicle_positions", tags=["Real-Time data"])    
+# async def get_all_vehicle_positions(agency_id: AgencyIdEnum, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+#     """
+#     Get all vehicle positions updates.
+#     """
+#     model = models.VehiclePositions
+#     data = await crud.get_all_data_async(async_db, model, agency_id.value, cache_expiration=6)
+#     if data is None:
+#         raise HTTPException(status_code=404, detail="Data not found")
+#     if format == FormatEnum.geojson:
+#         # Convert data to GeoJSON format
+#         data = to_geojson(data)
+#     return data
 
-@app.get("/{agency_id}/vehicle_positions/{field}/{ids}", tags=["Real-Time data"])
-async def get_vehicle_positions_by_ids(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
-    """
-    Get specific vehicle position updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
-    """
-    model = models.VehiclePositions
-    data = {}
-    ids = ids.split(',')
-    for id in ids:
-        result = await crud.get_data_async(async_db, model, agency_id.value, field.value, id)
-        if result is None:
-            raise HTTPException(status_code=404, detail=f"Data not found for ID {id}")
-        if format == FormatEnum.geojson:
-            # Convert data to GeoJSON format
-            result = to_geojson(result)
-        data[id] = result
-    return data
+# @app.get("/{agency_id}/vehicle_positions/{field}/{ids}", tags=["Real-Time data"])
+# async def get_vehicle_positions_by_ids(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, format: FormatEnum = Query(FormatEnum.json), async_db: AsyncSession = Depends(get_async_db)):
+#     """
+#     Get specific vehicle position updates by IDs dependant on the `field` selected. IDs can be provided as a comma-separated list.
+#     """
+#     model = models.VehiclePositions
+#     data = {}
+#     ids = ids.split(',')
+#     for id in ids:
+#         result = await crud.get_data_async(async_db, model, agency_id.value, field.value, id)
+#         if result is None:
+#             raise HTTPException(status_code=404, detail=f"Data not found for ID {id}")
+#         if format == FormatEnum.geojson:
+#             result = to_geojson(result)
+#         data[id] = result
+#     return data
 
-@app.get("/{agency_id}/vehicle_positions/{field}", tags=["Real-Time data"])
-async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, async_db: AsyncSession = Depends(get_async_db)):
-    """
-    Get a list of all values for a specific field in the vehicle positions updates.
-    """
-    model = models.VehiclePositions
-    data = await crud.get_list_of_unique_values_async(async_db, model, agency_id.value, field.value)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Data not found")
-    return data
+# @app.get("/{agency_id}/vehicle_positions/{field}", tags=["Real-Time data"])
+# async def get_list_of_field_values(agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, async_db: AsyncSession = Depends(get_async_db)):
+#     """
+#     Get a list of all values for a specific field in the vehicle positions updates.
+#     """
+#     model = models.VehiclePositions
+#     data = await crud.get_list_of_unique_values_async(async_db, model, agency_id.value, field.value)
+#     if data is None:
+#         raise HTTPException(status_code=404, detail="Data not found")
+#     return data
 
 #### Trip detail endpoints ####
 @app.get("/{agency_id}/trip_detail/route_code/{route_code}",tags=["Real-Time data"])
