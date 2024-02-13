@@ -128,9 +128,15 @@ async def update_gtfs_realtime_data():
     combined_trip_update_dataframes = []
     combined_stop_time_dataframes = []
     combined_vehicle_position_dataframes = []
-    
-    for agency in SWIFTLY_AGENCY_IDS:
-        async with websockets.connect(SERVICE_DICT[agency]) as websocket:
+    websocket_endpoints = [
+    'wss://api.metro.net/ws/LACMTA_Rail/vehicle_positions',
+    'wss://api.metro.net/ws/LACMTA/vehicle_positions',
+    'wss://api.metro.net/ws/LACMTA_Rail/trip_details',
+    'wss://api.metro.net/ws/LACMTA/trip_details'
+    ]
+
+    for endpoint in websocket_endpoints:
+        async with websockets.connect(endpoint) as websocket:
             feed = FeedMessage()
             response_data = await websocket.recv()
             if not response_data:
