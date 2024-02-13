@@ -535,7 +535,7 @@ async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: 
                                 try:
                                     item = json.loads(message['data'])
                                     await websocket.send_text(json.dumps(item))
-                                    await asyncio.sleep(5)
+                                    await asyncio.sleep(3)
                                 except Exception as e:
                                     await websocket.send_text(f"Error: {str(e)}")
                         await asyncio.sleep(3)
