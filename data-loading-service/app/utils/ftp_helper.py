@@ -17,12 +17,9 @@ def connect_to_ftp(remote_dir, server, user, pw):
 	login_result = ftp_client.login(user, pw)
 	
 	if '230' in login_result:
-		print("Successfully connected to " + server)
 		ftp_client.cwd(remote_dir)
-		print("In remote directory: " + ftp_client.pwd())
 		return True
 	else:
-		print("Failed to connect to " + server)
 		return False
 	#ftp.retrlines("LIST")
 
@@ -35,17 +32,13 @@ def get_file_from_ftp(file, local_dir):
 			write_path = os.path.join(local_dir,file)
 			real_write_path = os.path.realpath(write_path)
 			fhandle = open(real_write_path, 'wb')
-			print('Opening remote file: ' + filename) #for comfort sake, shows the file that's being retrieved
 			transfer_result = ftp_client.retrbinary('RETR ' + filename, fhandle.write)
 			if '226' in transfer_result:
-				print('Transfer complete: ' + local_dir + filename)
 				fhandle.close()
 				return True
 			else:
-				print('Transfer failed: ' + transfer_result)
 				fhandle.close()
 				return False
 
 def disconnect_from_ftp():
 	ftp_client.quit()
-	print("Disconnected from " + ftp_server)

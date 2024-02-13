@@ -21,7 +21,6 @@ RUN apt-get update && apt-get install -y \
     && pip install --no-cache-dir -r requirements.txt
 
 COPY . .
-
 # Create a new user and switch to that user
 RUN useradd -ms /bin/bash pgbouncer && \
     chown -R pgbouncer:pgbouncer /etc/pgbouncer
@@ -44,6 +43,10 @@ print(f'export DB_NAME={result.path[1:]}')" > /tmp/env.sh && \
     echo "auth_type = md5" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "auth_file = /etc/pgbouncer/userlist.txt" >> /etc/pgbouncer/pgbouncer.ini && \
     echo "client_login_timeout = 300" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "log_connections = 0" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "log_disconnections = 0" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "log_pooler_errors = 0" >> /etc/pgbouncer/pgbouncer.ini && \
+    echo "stats_period = 300000" >> /etc/pgbouncer/pgbouncer.ini && \
     gosu pgbouncer pgbouncer /etc/pgbouncer/pgbouncer.ini & \
     exec gunicorn -k uvicorn.workers.UvicornWorker app.main:app --bind 0.0.0.0:80 --workers 2
 EXPOSE 80
