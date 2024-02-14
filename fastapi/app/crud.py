@@ -141,17 +141,17 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
 
 ####
 
-
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
     logging.info(f"Executing query for model={model}, agency_id={agency_id}, field={field_name}, id={field_value}")
 
     key = f"{model.__name__}:{agency_id}:{field_name}:{field_value}"
 
+    # Create a new Redis connection for each function call
+    redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
     # Try to get the result from Redis
-    if redis_connection is None:
-        initialize_redis()
-    result = await redis_connection.get(key)
+    result = await redis.get(key)
     if result is not None:
         try:
             data = pickle.loads(result)
@@ -185,12 +185,15 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
 
     # Cache the result in Redis with the specified expiration time
     try:
-        await redis_connection.set(key, pickle.dumps(data), ex=cache_expiration)
+        await redis.set(key, pickle.dumps(data), ex=cache_expiration)
     except pickle.PicklingError as e:
         logging.error(f"Error pickling data for Redis: {e}")
 
+    # Close the Redis connection
+    await redis.close()
+
     return [item.to_dict() for item in data]
- 
+
 async def get_all_data_async(async_session: Session, model: Type[BaseModel], agency_id: str, cache_expiration: int = None):
     data = await get_data_async(async_session, model, agency_id, cache_expiration=cache_expiration)
     return data
@@ -202,11 +205,12 @@ async def get_list_of_unique_values_async(session: AsyncSession, model, agency_i
     # Create a unique key for this query
     key = f"{model.__name__}:{agency_id}:{field_name}:unique_values"
     logging.info(f"Generated key: {key}")
+
+    # Create a new Redis connection for each function call
+    redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
     # Try to get the result from Redis
-    if redis_connection is None:
-        initialize_redis()
-    # Try to get the result from Redis
-    result = await redis_connection.get(key)
+    result = await redis.get(key)
     if result is not None:
         logging.info("Found result in Redis")
         return pickle.loads(result)
@@ -229,7 +233,10 @@ async def get_list_of_unique_values_async(session: AsyncSession, model, agency_i
     logging.info(f"Unique values from database: {unique_values}")
 
     # Store the result in Redis
-    await redis_connection.set(key, pickle.dumps(unique_values))
+    await redis.set(key, pickle.dumps(unique_values))
+
+    # Close the Redis connection
+    await redis.close()
 
     return unique_values
 
@@ -289,9 +296,11 @@ async def get_unique_shape_scheduled_stop_times(db: AsyncSession, route_code: st
 
 async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters: dict, geojson:bool, agency_id:str, include_stop_time_updates: bool = False):
     cache_key = f'trip_data:{str(filters)}:{agency_id}:{include_stop_time_updates}'
-    if redis_connection is None:
-        initialize_redis()
-    cached_result = await redis_connection.get(cache_key)
+
+    # Create a new Redis connection for each function call
+    redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
+    cached_result = await redis.get(cache_key)
     if cached_result is not None:
         return pickle.loads(cached_result)
 
@@ -338,6 +347,11 @@ async def get_gtfs_rt_vehicle_positions_trip_data(session: AsyncSession, filters
             st = row[1]
             vp_dict.update(st.to_dict())
         vehicle_positions.append(vp_dict)
+    # Store the result in Redis
+    await redis.set(cache_key, pickle.dumps(vehicle_positions))
+
+    # Close the Redis connection
+    await redis.close()
 
     if geojson:
         return convert_to_geojson(vehicle_positions)
