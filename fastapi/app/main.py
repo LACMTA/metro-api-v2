@@ -514,7 +514,7 @@ from .utils.gtfs_rt_swiftly import connect_to_swiftly, SWIFTLY_API_REALTIME, SWI
 
 connected_clients = 0
 
-@router.get("/ws/{agency_id}/{endpoint}/{route_codes}")
+@app.router.get("/ws/{agency_id}/{endpoint}/{route_codes}")
 async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: Optional[str] = None):
     """
     Dummy HTTP endpoint for WebSocket documentation.
