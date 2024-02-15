@@ -514,8 +514,8 @@ from .utils.gtfs_rt_swiftly import connect_to_swiftly, SWIFTLY_API_REALTIME, SWI
 
 connected_clients = 0
 
-@app.websocket("/ws/{agency_id}/{endpoint}/{route_code}")
-async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str, route_code: str = None):
+@app.websocket("/ws/{agency_id}/{endpoint}/{route_codes}")
+async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str, route_codes: str = None):
     global connected_clients
     connected_clients += 1
     try:
@@ -523,6 +523,9 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str
 
         redis = app.state.redis_pool
         psub = redis.pubsub()
+
+        # Split route_codes by comma to get a list of routes
+        route_list = route_codes.split(",") if route_codes else None
 
         async def reader(channel: aioredis.client.PubSub):
             while True:
@@ -535,8 +538,8 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str
                                     data = json.loads(message['data'])
                                     # Loop over each vehicle in the entity list
                                     for item in data.get('entity', []):
-                                        # Filter data based on route_code
-                                        if route_code is None or item.get('route_code') == route_code:
+                                        # Filter data based on route_list
+                                        if route_list is None or item.get('route_code') in route_list:
                                             await websocket.send_text(json.dumps(item))
                                     await asyncio.sleep(3)
                                 except Exception as e:
