@@ -17,6 +17,7 @@ LOCALPATH = os.path.realpath(TARGET_PATH)
 
 inspector = inspect(engine)
 tables = inspector.get_table_names()
+
 if "canceled_service" in tables:
     canceled_data_frame_from_database = pd.read_sql_query('select * from "canceled_service"',con=engine)
 else:
@@ -65,20 +66,17 @@ else:
             # If the error is due to another issue, re-raise the exception
             pass
             # raise
-        
 def run_update():
     try:
-        print('pulling CancelledTripsRT.json from FTP')
         if connect_to_ftp(REMOTEPATH, Config.SERVER, Config.USERNAME, Config.PASS):
             get_file_from_ftp(TARGET_FILE, LOCALPATH)
         disconnect_from_ftp()
         target_json_path = Path(os.path.join(LOCALPATH,TARGET_FILE))
         load_canceled_service_into_db(target_json_path)
     except Exception as e:
-        # print('FTP transfer failed: ' + str(e))
         pass
-
 from sqlalchemy.orm import Session
+
 
 def load_canceled_service_into_db(path_to_json_file):
     session = Session(bind=engine)
