@@ -514,8 +514,71 @@ from .utils.gtfs_rt_swiftly import connect_to_swiftly, SWIFTLY_API_REALTIME, SWI
 
 connected_clients = 0
 
-@app.websocket("/ws/{agency_id}/vehicle_positions")
-async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: str):
+@app.router.get("/ws/{agency_id}/{endpoint}/{route_codes}")
+async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: Optional[str] = None):
+    """
+    Dummy HTTP endpoint for WebSocket documentation.
+
+    This endpoint is used for documentation purposes only. It mirrors the WebSocket endpoint that accepts connections and sends real-time updates about vehicles and trips.
+
+    Args:
+        agency_id (str): The ID of the agency.
+        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+        route_codes (str, optional): A comma-separated list of route codes to filter updates. If not provided, updates for all routes are sent.
+
+    The WebSocket endpoint sends updates in the following format:
+
+    {
+        "id": "vehicle_id",
+        "vehicle": {
+            "trip": {
+                "route_id": "route_code",
+                ...
+            },
+            ...
+        },
+        "route_code": "route_code",
+        ...
+    }
+
+    The WebSocket endpoint sends updates every 3 seconds. If an error occurs while processing updates, the WebSocket endpoint sends an error message in the following format:
+
+    "Error: error_message"
+    """
+    raise HTTPException(status_code=400, detail="This endpoint is for WebSocket connections only.")
+    
+@app.websocket("/ws/{agency_id}/{endpoint}/{route_codes}")
+async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str, route_codes: str = None):
+    """
+    WebSocket endpoint for real-time updates.
+
+    This endpoint accepts WebSocket connections and sends real-time updates about vehicles and trips.
+
+    Args:
+        websocket (WebSocket): The WebSocket connection.
+        agency_id (str): The ID of the agency.
+        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+        route_codes (str, optional): A comma-separated list of route codes to filter updates. If not provided, updates for all routes are sent.
+
+    The endpoint sends updates in the following format:
+
+    {
+        "id": "vehicle_id",
+        "vehicle": {
+            "trip": {
+                "route_id": "route_code",
+                ...
+            },
+            ...
+        },
+        "route_code": "route_code",
+        ...
+    }
+
+    The endpoint sends updates every 3 seconds. If an error occurs while processing updates, the endpoint sends an error message in the following format:
+
+    "Error: error_message"
+    """
     global connected_clients
     connected_clients += 1
     try:
@@ -523,6 +586,9 @@ async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: 
 
         redis = app.state.redis_pool
         psub = redis.pubsub()
+
+        # Split route_codes by comma to get a list of routes
+        route_list = route_codes.split(",") if route_codes else None
 
         async def reader(channel: aioredis.client.PubSub):
             while True:
@@ -532,8 +598,12 @@ async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: 
                         if message is not None:
                             if message["type"] == "message":
                                 try:
-                                    item = json.loads(message['data'])
-                                    await websocket.send_text(json.dumps(item))
+                                    data = json.loads(message['data'])
+                                    # Loop over each vehicle in the entity list
+                                    for item in data.get('entity', []):
+                                        # Filter data based on route_list
+                                        if route_list is None or item.get('route_code') in route_list:
+                                            await websocket.send_text(json.dumps(item))
                                     await asyncio.sleep(3)
                                 except Exception as e:
                                     await websocket.send_text(f"Error: {str(e)}")
@@ -541,39 +611,19 @@ async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: 
                 except asyncio.TimeoutError:
                     pass
 
-        async def publisher():
-            global connected_clients
-            data = None  # Cache the data in memory
-            while True:
-                try:
-                    # Only fetch data if there are connected clients
-                    if connected_clients > 0:
-                        # Try to get data from Redis cache first
-                        cache_key = f'vehicle_positions_cache:{agency_id}'
-                        cached_data = await redis.get(cache_key)
-                        if cached_data is not None:
-                            data = json.loads(cached_data)
-                        else:
-                            # If not in cache, fetch data from the Swiftly API
-                            service = SERVICE_DICT[agency_id]
-                            response_data = await connect_to_swiftly(service, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
-                            if response_data is not False:
-                                data = json.loads(response_data)
-                                # Store the result in Redis cache
-                                await redis.set(cache_key, json.dumps(data), ex=5)  # Set an expiration time of 5 seconds
-                    # Publish the data
-                    if data is not None:
-                        await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
-                    await asyncio.sleep(3.6)  # Sleep for 3.6 seconds
-                except Exception as e:
-                    print(f"Error: {str(e)}")
-        # Start the publisher and reader as separate tasks
-        asyncio.create_task(publisher())
+        # Map endpoint to the corresponding variable
+        endpoint_map = {
+            "vehicle_positions": SWIFTLY_GTFS_RT_VEHICLE_POSITIONS,
+            "trip_updates": SWIFTLY_GTFS_RT_TRIP_UPDATES
+        }
+        endpoint_var = endpoint_map.get(endpoint)
 
+        # Subscribe to the Redis pubsub channel
+        cache_key = f'{endpoint_var}_{agency_id}_all'
         async with psub as p:
-            await p.subscribe(f'vehicle_positions_{agency_id}')
+            await p.subscribe(cache_key)
             await reader(p)  # wait for reader to complete
-            await p.unsubscribe(f'vehicle_positions_{agency_id}')
+            await p.unsubscribe(cache_key)
 
     finally:
         connected_clients -= 1
@@ -582,9 +632,69 @@ async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: 
     await psub.close()
     redis.close()
     await redis.wait_closed()
+@app.router.get("/ws/{agency_id}/{endpoint}/{route_codes}")
+async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: Optional[str] = None):
+    """
+    Dummy HTTP endpoint for WebSocket documentation.
 
-@app.websocket("/ws/{agency_id}/trip_updates")
-async def websocket_trip_updates_endpoint(websocket: WebSocket, agency_id: str):
+    This endpoint is used for documentation purposes only. It mirrors the WebSocket endpoint that accepts connections and sends real-time updates about vehicles and trips.
+
+    Args:
+        agency_id (str): The ID of the agency.
+        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+        route_codes (str, optional): A comma-separated list of route codes to filter updates. If not provided, updates for all routes are sent.
+
+    The WebSocket endpoint sends updates in the following format:
+
+    {
+        "id": "vehicle_id",
+        "vehicle": {
+            "trip": {
+                "route_id": "route_code",
+                ...
+            },
+            ...
+        },
+        "route_code": "route_code",
+        ...
+    }
+
+    The WebSocket endpoint sends updates every 3 seconds. If an error occurs while processing updates, the WebSocket endpoint sends an error message in the following format:
+
+    "Error: error_message"
+    """
+    raise HTTPException(status_code=400, detail="This endpoint is for WebSocket connections only.")
+@app.websocket("/ws/{agency_id}/{endpoint}")
+async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str):
+    """
+    WebSocket endpoint for real-time updates.
+
+    This endpoint accepts WebSocket connections and sends real-time updates about vehicles and trips.
+
+    Args:
+        websocket (WebSocket): The WebSocket connection.
+        agency_id (str): The ID of the agency.
+        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+
+    The endpoint sends updates in the following format:
+
+    {
+        "id": "vehicle_id",
+        "vehicle": {
+            "trip": {
+                "route_id": "route_code",
+                ...
+            },
+            ...
+        },
+        "route_code": "route_code",
+        ...
+    }
+
+    The endpoint sends updates every 3 seconds. If an error occurs while processing updates, the endpoint sends an error message in the following format:
+
+    "Error: error_message"
+    """
     global connected_clients
     connected_clients += 1
     try:
@@ -601,47 +711,30 @@ async def websocket_trip_updates_endpoint(websocket: WebSocket, agency_id: str):
                         if message is not None:
                             if message["type"] == "message":
                                 try:
-                                    item = json.loads(message['data'])
-                                    await websocket.send_text(json.dumps(item))
+                                    data = json.loads(message['data'])
+                                    # Loop over each vehicle in the entity list
+                                    for item in data.get('entity', []):
+                                        await websocket.send_text(json.dumps(item))
+                                    await asyncio.sleep(3)
                                 except Exception as e:
                                     await websocket.send_text(f"Error: {str(e)}")
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(3)
                 except asyncio.TimeoutError:
                     pass
 
-        async def publisher():
-            global connected_clients
-            data = None  # Cache the data in memory
-            while True:
-                try:
-                    # Only fetch data if there are connected clients
-                    if connected_clients > 0:
-                        # Try to get data from Redis cache first
-                        cache_key = f'trip_updates_cache:{agency_id}'
-                        cached_data = await redis.get(cache_key)
-                        if cached_data is not None:
-                            data = json.loads(cached_data)
-                        else:
-                            # If not in cache, fetch data from the Swiftly API
-                            service = SERVICE_DICT[agency_id]
-                            response_data = await connect_to_swiftly(service, SWIFTLY_GTFS_RT_TRIP_UPDATES, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
-                            if response_data is not False:
-                                data = json.loads(response_data)
-                                # Store the result in Redis cache
-                                await redis.set(cache_key, json.dumps(data), ex=15)  # Set an expiration time of 60 seconds
-                    # Publish the data
-                    if data is not None:
-                        await redis.publish(f'trip_updates_{agency_id}', json.dumps(data))
-                    await asyncio.sleep(3.6)  # Sleep for 3.6 seconds
-                except Exception as e:
-                    print(f"Error: {str(e)}")
-        # Start the publisher and reader as separate tasks
-        asyncio.create_task(publisher())
+        # Map endpoint to the corresponding variable
+        endpoint_map = {
+            "vehicle_positions": SWIFTLY_GTFS_RT_VEHICLE_POSITIONS,
+            "trip_updates": SWIFTLY_GTFS_RT_TRIP_UPDATES
+        }
+        endpoint_var = endpoint_map.get(endpoint)
 
+        # Subscribe to the Redis pubsub channel
+        cache_key = f'{endpoint_var}_{agency_id}_all'
         async with psub as p:
-            await p.subscribe(f'trip_updates_{agency_id}')
+            await p.subscribe(cache_key)
             await reader(p)  # wait for reader to complete
-            await p.unsubscribe(f'trip_updates_{agency_id}')
+            await p.unsubscribe(cache_key)
 
     finally:
         connected_clients -= 1
@@ -651,66 +744,6 @@ async def websocket_trip_updates_endpoint(websocket: WebSocket, agency_id: str):
     redis.close()
     await redis.wait_closed()
 
-@app.websocket("/ws/{agency_id}/trip_detail/route_code/{route_code}")
-async def websocket_endpoint(websocket: WebSocket, agency_id: str, route_code: str, db: AsyncSession = Depends(get_db)):
-    await websocket.accept()
-    route_codes = route_code.split(',')
-    while True:
-        try:
-            for route_code in route_codes:
-                data = await crud.get_all_data_websocket_async(db, models.VehiclePositions, agency_id, 'route_code', route_code)
-                for item in data:
-                    # Skip empty strings
-                    if item.strip() == '':
-                        continue
-                    # Parse item into a dictionary if it's a string
-                    if isinstance(item, str):
-                        item = json.loads(item)
-                    # Now item should be a dictionary, and you can access 'vehicle_position'
-                    if 'vehicle_position' in item:
-                        item_dict = item['vehicle_position']
-                    if 'trip_update' in item:
-                        item_dict.update(item['trip_update'])
-                    if 'stop_time' in item:
-                        stop_times_dict = item['stop_time']
-                        stop_times_dict['scheduled_departure_time'] = stop_times_dict.pop('departure_time', None)
-                        stop_times_dict['scheduled_arrival_time'] = stop_times_dict.pop('arrival_time', None)
-                        item_dict.update(stop_times_dict)
-                    await websocket.send_text(json.dumps(item_dict))
-        except Exception as e:
-            await websocket.send_text(f"Error: {str(e)}")
-
-
-
-@app.websocket("/ws/{agency_id}/vehicle_positions/{field}/{ids}")
-async def websocket_vehicle_positions_by_ids(websocket: WebSocket, agency_id: AgencyIdEnum, field: VehiclePositionsFieldsEnum, ids: str, async_db: AsyncSession = Depends(get_async_db)):
-    await websocket.accept()
-    model = models.VehiclePositions
-    ids = ids.split(',')
-    try:
-        while True:
-            data = {}
-            for id in ids:
-                try:
-                    result = await asyncio.wait_for(crud.get_data_async(async_db, model, agency_id.value, field.value, id), timeout=120)
-                    if result is not None:
-                        data[id] = result
-                        # Publish the received data to a Redis channel
-                        await crud.redis_connection.publish('live_vehicle_positions_by_ids', data)
-                except asyncio.TimeoutError:
-                    raise HTTPException(status_code=408, detail="Request timed out")
-            if data:
-                await asyncio.sleep(5)
-                # Subscribe to the Redis channel and send any received messages to the WebSocket client
-                ch = await crud.redis_connection.subscribe('live_vehicle_positions_by_ids')
-                while await ch.wait_message():
-                    message = await ch.get()
-                    await websocket.send_json(message)
-                # Send a ping every 5 seconds
-                await websocket.send_json({"type": "ping"})
-    except WebSocketDisconnect:
-        # Handle the WebSocket disconnect event
-        print("WebSocket disconnected")
 
 #### END GTFS-RT Routes ####
 
@@ -1050,9 +1083,34 @@ async def startup_event():
         crud.redis_connection = crud.initialize_redis()
         app.state.redis_pool = aioredis.from_url(Config.REDIS_URL, decode_responses=True)
         setup_logging()
+
+        # Start the task to load data every 4 seconds
+        asyncio.create_task(load_data_every_4_seconds())
     except Exception as e:
         print(f"Failed to connect to Redis: {e}")
         raise e
+
+async def load_data_every_4_seconds():
+    redis = app.state.redis_pool  # Use the existing Redis connection
+    while True:
+        for agency_id, service in SERVICE_DICT.items():
+            for endpoint in [SWIFTLY_GTFS_RT_TRIP_UPDATES, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS]:
+                data = await connect_to_swiftly(service, endpoint, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
+                if data is not False:
+                    data = json.loads(data)  # Parse JSON data to dictionary
+                    # Add route_code to each entity
+                    for entity in data.get('entity', []):
+                        route_id = entity.get('vehicle', {}).get('trip', {}).get('routeId', '')
+                        if agency_id == 'LACMTA_Rail':
+                            entity['route_code'] = route_id
+                        elif agency_id == 'LACMTA':
+                            entity['route_code'] = route_id.split('-')[0] if '-' in route_id else route_id
+
+                    cache_key = f'{endpoint}_{agency_id}_all'
+                    await redis.set(cache_key, json.dumps(data))
+                    await redis.publish(cache_key, json.dumps(data))
+        await asyncio.sleep(4)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
