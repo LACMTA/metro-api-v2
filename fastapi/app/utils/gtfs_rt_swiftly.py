@@ -20,14 +20,11 @@ async def connect_to_swiftly(service, endpoint, bus_api_key, rail_api_key):
         "Authorization": key
     }
     try:
-        print('Connecting to Swiftly API: ' + swiftly_endpoint)
         async with ClientSession() as session:
             async with session.get(swiftly_endpoint, headers=header) as response:
-                print('Response status code: ' + str(response.status))
                 if (response.status == 200):
                     return await response.text()  # Use .text() instead of .read() to get the response as a string
                 else:
                     return False
     except Exception as e:
-        print.exception('Error connecting to Swiftly API: ' + str(e))
         return False
