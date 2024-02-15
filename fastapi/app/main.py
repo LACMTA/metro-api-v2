@@ -514,8 +514,71 @@ from .utils.gtfs_rt_swiftly import connect_to_swiftly, SWIFTLY_API_REALTIME, SWI
 
 connected_clients = 0
 
+@router.get("/ws/{agency_id}/{endpoint}/{route_codes}")
+async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: Optional[str] = None):
+    """
+    Dummy HTTP endpoint for WebSocket documentation.
+
+    This endpoint is used for documentation purposes only. It mirrors the WebSocket endpoint that accepts connections and sends real-time updates about vehicles and trips.
+
+    Args:
+        agency_id (str): The ID of the agency.
+        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+        route_codes (str, optional): A comma-separated list of route codes to filter updates. If not provided, updates for all routes are sent.
+
+    The WebSocket endpoint sends updates in the following format:
+
+    {
+        "id": "vehicle_id",
+        "vehicle": {
+            "trip": {
+                "route_id": "route_code",
+                ...
+            },
+            ...
+        },
+        "route_code": "route_code",
+        ...
+    }
+
+    The WebSocket endpoint sends updates every 3 seconds. If an error occurs while processing updates, the WebSocket endpoint sends an error message in the following format:
+
+    "Error: error_message"
+    """
+    raise HTTPException(status_code=400, detail="This endpoint is for WebSocket connections only.")
+    
 @app.websocket("/ws/{agency_id}/{endpoint}/{route_codes}")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str, route_codes: str = None):
+    """
+    WebSocket endpoint for real-time updates.
+
+    This endpoint accepts WebSocket connections and sends real-time updates about vehicles and trips.
+
+    Args:
+        websocket (WebSocket): The WebSocket connection.
+        agency_id (str): The ID of the agency.
+        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+        route_codes (str, optional): A comma-separated list of route codes to filter updates. If not provided, updates for all routes are sent.
+
+    The endpoint sends updates in the following format:
+
+    {
+        "id": "vehicle_id",
+        "vehicle": {
+            "trip": {
+                "route_id": "route_code",
+                ...
+            },
+            ...
+        },
+        "route_code": "route_code",
+        ...
+    }
+
+    The endpoint sends updates every 3 seconds. If an error occurs while processing updates, the endpoint sends an error message in the following format:
+
+    "Error: error_message"
+    """
     global connected_clients
     connected_clients += 1
     try:
@@ -569,9 +632,69 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str
     await psub.close()
     redis.close()
     await redis.wait_closed()
+@app.router.get("/ws/{agency_id}/{endpoint}/{route_codes}")
+async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: Optional[str] = None):
+    """
+    Dummy HTTP endpoint for WebSocket documentation.
 
+    This endpoint is used for documentation purposes only. It mirrors the WebSocket endpoint that accepts connections and sends real-time updates about vehicles and trips.
+
+    Args:
+        agency_id (str): The ID of the agency.
+        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+        route_codes (str, optional): A comma-separated list of route codes to filter updates. If not provided, updates for all routes are sent.
+
+    The WebSocket endpoint sends updates in the following format:
+
+    {
+        "id": "vehicle_id",
+        "vehicle": {
+            "trip": {
+                "route_id": "route_code",
+                ...
+            },
+            ...
+        },
+        "route_code": "route_code",
+        ...
+    }
+
+    The WebSocket endpoint sends updates every 3 seconds. If an error occurs while processing updates, the WebSocket endpoint sends an error message in the following format:
+
+    "Error: error_message"
+    """
+    raise HTTPException(status_code=400, detail="This endpoint is for WebSocket connections only.")
 @app.websocket("/ws/{agency_id}/{endpoint}")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str):
+    """
+    WebSocket endpoint for real-time updates.
+
+    This endpoint accepts WebSocket connections and sends real-time updates about vehicles and trips.
+
+    Args:
+        websocket (WebSocket): The WebSocket connection.
+        agency_id (str): The ID of the agency.
+        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+
+    The endpoint sends updates in the following format:
+
+    {
+        "id": "vehicle_id",
+        "vehicle": {
+            "trip": {
+                "route_id": "route_code",
+                ...
+            },
+            ...
+        },
+        "route_code": "route_code",
+        ...
+    }
+
+    The endpoint sends updates every 3 seconds. If an error occurs while processing updates, the endpoint sends an error message in the following format:
+
+    "Error: error_message"
+    """
     global connected_clients
     connected_clients += 1
     try:
