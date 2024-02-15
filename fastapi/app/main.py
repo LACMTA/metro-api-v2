@@ -513,7 +513,6 @@ from geoalchemy2 import WKBElement
 from .utils.gtfs_rt_swiftly import connect_to_swiftly, SWIFTLY_API_REALTIME, SWIFTLY_GTFS_RT_TRIP_UPDATES, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS, SERVICE_DICT
 
 connected_clients = 0
-
 @app.websocket("/ws/{agency_id}/vehicle_positions")
 async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: str):
     global connected_clients
@@ -541,39 +540,12 @@ async def websocket_vehicle_positions_endpoint(websocket: WebSocket, agency_id: 
                 except asyncio.TimeoutError:
                     pass
 
-        async def publisher():
-            global connected_clients
-            data = None  # Cache the data in memory
-            while True:
-                try:
-                    # Only fetch data if there are connected clients
-                    if connected_clients > 0:
-                        # Try to get data from Redis cache first
-                        cache_key = f'vehicle_positions_cache:{agency_id}'
-                        cached_data = await redis.get(cache_key)
-                        if cached_data is not None:
-                            data = json.loads(cached_data)
-                        else:
-                            # If not in cache, fetch data from the Swiftly API
-                            service = SERVICE_DICT[agency_id]
-                            response_data = await connect_to_swiftly(service, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
-                            if response_data is not False:
-                                data = json.loads(response_data)
-                                # Store the result in Redis cache
-                                await redis.set(cache_key, json.dumps(data), ex=5)  # Set an expiration time of 5 seconds
-                    # Publish the data
-                    if data is not None:
-                        await redis.publish(f'vehicle_positions_{agency_id}', json.dumps(data))
-                    await asyncio.sleep(3.6)  # Sleep for 3.6 seconds
-                except Exception as e:
-                    print(f"Error: {str(e)}")
-        # Start the publisher and reader as separate tasks
-        asyncio.create_task(publisher())
-
+        # Subscribe to the Redis pubsub channel
+        cache_key = f'{SWIFTLY_GTFS_RT_VEHICLE_POSITIONS}_{agency_id}_all'
         async with psub as p:
-            await p.subscribe(f'vehicle_positions_{agency_id}')
+            await p.subscribe(cache_key)
             await reader(p)  # wait for reader to complete
-            await p.unsubscribe(f'vehicle_positions_{agency_id}')
+            await p.unsubscribe(cache_key)
 
     finally:
         connected_clients -= 1
@@ -609,39 +581,12 @@ async def websocket_trip_updates_endpoint(websocket: WebSocket, agency_id: str):
                 except asyncio.TimeoutError:
                     pass
 
-        async def publisher():
-            global connected_clients
-            data = None  # Cache the data in memory
-            while True:
-                try:
-                    # Only fetch data if there are connected clients
-                    if connected_clients > 0:
-                        # Try to get data from Redis cache first
-                        cache_key = f'trip_updates_cache:{agency_id}'
-                        cached_data = await redis.get(cache_key)
-                        if cached_data is not None:
-                            data = json.loads(cached_data)
-                        else:
-                            # If not in cache, fetch data from the Swiftly API
-                            service = SERVICE_DICT[agency_id]
-                            response_data = await connect_to_swiftly(service, SWIFTLY_GTFS_RT_TRIP_UPDATES, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
-                            if response_data is not False:
-                                data = json.loads(response_data)
-                                # Store the result in Redis cache
-                                await redis.set(cache_key, json.dumps(data), ex=15)  # Set an expiration time of 60 seconds
-                    # Publish the data
-                    if data is not None:
-                        await redis.publish(f'trip_updates_{agency_id}', json.dumps(data))
-                    await asyncio.sleep(3.6)  # Sleep for 3.6 seconds
-                except Exception as e:
-                    print(f"Error: {str(e)}")
-        # Start the publisher and reader as separate tasks
-        asyncio.create_task(publisher())
-
+        # Subscribe to the Redis pubsub channel
+        cache_key = f'{SWIFTLY_GTFS_RT_TRIP_UPDATES}_{agency_id}_all'
         async with psub as p:
-            await p.subscribe(f'trip_updates_{agency_id}')
+            await p.subscribe(cache_key)
             await reader(p)  # wait for reader to complete
-            await p.unsubscribe(f'trip_updates_{agency_id}')
+            await p.unsubscribe(cache_key)
 
     finally:
         connected_clients -= 1
@@ -1050,9 +995,25 @@ async def startup_event():
         crud.redis_connection = crud.initialize_redis()
         app.state.redis_pool = aioredis.from_url(Config.REDIS_URL, decode_responses=True)
         setup_logging()
+
+        # Start the task to load data every 4 seconds
+        asyncio.create_task(load_data_every_4_seconds())
     except Exception as e:
         print(f"Failed to connect to Redis: {e}")
         raise e
+
+async def load_data_every_4_seconds():
+    redis = app.state.redis_pool  # Use the existing Redis connection
+    while True:
+        for agency_id, service in SERVICE_DICT.items():
+            for endpoint in [SWIFTLY_GTFS_RT_TRIP_UPDATES, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS]:
+                data = await connect_to_swiftly(service, endpoint, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
+                if data is not False:
+                    cache_key = f'{endpoint}_{agency_id}_all'
+                    await redis.set(cache_key, data)
+                    await redis.publish(cache_key, data)
+        await asyncio.sleep(4)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

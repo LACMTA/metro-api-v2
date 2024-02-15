@@ -63,7 +63,8 @@ else:
             print("Table 'canceled_service' already exists. Skipping creation.")
         else:
             # If the error is due to another issue, re-raise the exception
-            raise
+            pass
+            # raise
         
 def run_update():
     try:
@@ -74,7 +75,8 @@ def run_update():
         target_json_path = Path(os.path.join(LOCALPATH,TARGET_FILE))
         load_canceled_service_into_db(target_json_path)
     except Exception as e:
-        print('FTP transfer failed: ' + str(e))
+        # print('FTP transfer failed: ' + str(e))
+        pass
 
 from sqlalchemy.orm import Session
 
