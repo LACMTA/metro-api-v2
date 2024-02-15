@@ -14,7 +14,7 @@ import asyncio
 import async_timeout
 import pytz
 import time
-
+from aiohttp import ClientSession
 from datetime import timedelta, date, datetime
 
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query, WebSocket, WebSocketDisconnect
@@ -61,6 +61,7 @@ from . import crud, models, security, schemas
 from .config import Config
 from pathlib import Path
 
+from .utils.gtfs_rt_swiftly import connect_to_swiftly,load_data_every_4_seconds, SWIFTLY_API_REALTIME, SWIFTLY_GTFS_RT_TRIP_UPDATES, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS, SERVICE_DICT
 from logzio.handler import LogzioHandler
 import logging
 import typing as t
@@ -93,6 +94,10 @@ async def get_data(db: Session, key: str, fetch_func):
         await crud.redis_connection.set(key, data)
     return data
 
+SWIFTLY_AGENCY_SERVICE_MAPPING = {
+    'LACMTA': 'lametro',
+    'LACMTA_Rail': 'lametro-rail'
+}
 
 class EndpointFilter(logging.Filter):
     def __init__(
@@ -503,23 +508,84 @@ async def get_trip_detail_by_vehicle(agency_id: AgencyIdEnum, vehicle_id: Option
 #### End Trip detail endpoints ####
 
 #### Websocket endpoints ####
-# ws://localhost:80/ws/LACMTA/trip_detail/route_code/720
 import json
 from geoalchemy2.shape import to_shape
 from shapely.geometry import mapping
 from geoalchemy2 import WKBElement
 
 
-from .utils.gtfs_rt_swiftly import connect_to_swiftly, SWIFTLY_API_REALTIME, SWIFTLY_GTFS_RT_TRIP_UPDATES, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS, SERVICE_DICT
-
 connected_clients = 0
+# testing websocket connection string:
+# ws://localhost:80/ws/LACMTA/vehicle_positions/720
+# @app.websocket("/ws/{agency_id}/{source}/{route_code?}")
+# async def websocket_endpoint(websocket: WebSocket, agency_id: str, source: str, route_code: str = None):
+#     global connected_clients
+#     connected_clients += 1
+#     try:
+#         await websocket.accept()
 
-@app.websocket("/ws/{agency_id}/{endpoint}/{route_code}")
-async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str, route_code: str = None):
+#         redis = app.state.redis_pool
+#         psub = redis.pubsub()
+
+#         async def reader(channel: aioredis.client.PubSub):
+#             while True:
+#                 try:
+#                     async with async_timeout.timeout(1):
+#                         message = await channel.get_message(ignore_subscribe_messages=True)
+#                         if message is not None:
+#                             if message["type"] == "message":
+#                                 try:
+#                                     item = json.loads(message['data'])
+#                                     await websocket.send_text(json.dumps(item))
+#                                     await asyncio.sleep(3)
+#                                 except Exception as e:
+#                                     await websocket.send_text(f"Error: {str(e)}")
+#                         await asyncio.sleep(3)
+#                 except asyncio.TimeoutError:
+#                     pass
+#         async def publisher():
+#             global connected_clients
+#             data = None  # Cache the data in memory
+#             while True:
+#                 try:
+#                     # Only fetch data if there are connected clients
+#                     if connected_clients > 0:
+#                         # Fetch data from Redis
+#                         cache_key = f'{source}_{agency_id}_{route_code if route_code else "all"}'
+#                         cached_data = await redis.get(cache_key)
+#                         if cached_data is not None:
+#                             data = json.loads(cached_data)
+#                     # Publish the data
+#                     if data is not None:
+#                         await redis.publish(f'{source}_{agency_id}_{route_code if route_code else "all"}', json.dumps(data))
+#                     await asyncio.sleep(4)  # Sleep for 4 seconds
+#                 except Exception as e:
+#                     print(f"Error: {str(e)}")
+#         # Start the publisher and reader as separate tasks
+#         asyncio.create_task(publisher())
+
+#         async with psub as p:
+#             await p.subscribe(f'{source}_{agency_id}_{route_code if route_code else "all"}')
+#             await reader(p)  # wait for reader to complete
+#             await p.unsubscribe(f'{source}_{agency_id}_{route_code if route_code else "all"}')
+
+#     finally:
+#         connected_clients -= 1
+
+#     # closing all open connections
+#     await psub.close()
+#     redis.close()
+#     await redis.wait_closed()
+
+@app.websocket("/ws/{agency_id}/vehicle_positions/")
+async def websocket_endpoint(websocket: WebSocket, agency_id: str):
     global connected_clients
     connected_clients += 1
+    source = 'vehicle_positions'  # Default source
+    service = SWIFTLY_AGENCY_SERVICE_MAPPING.get(agency_id, agency_id)
     try:
         await websocket.accept()
+        await websocket.send_text(f"New connection: {agency_id}, {source}")  # Debugging line
 
         redis = app.state.redis_pool
         psub = redis.pubsub()
@@ -532,12 +598,9 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str
                         if message is not None:
                             if message["type"] == "message":
                                 try:
-                                    data = json.loads(message['data'])
-                                    # Loop over each vehicle in the entity list
-                                    for item in data.get('entity', []):
-                                        # Filter data based on route_code
-                                        if route_code is None or item.get('route_code') == route_code:
-                                            await websocket.send_text(json.dumps(item))
+                                    item = json.loads(message['data'])
+                                    await websocket.send_text(json.dumps(item))
+                                    await websocket.send_text(f"Sent message: {item}")  # Debugging line
                                     await asyncio.sleep(3)
                                 except Exception as e:
                                     await websocket.send_text(f"Error: {str(e)}")
@@ -545,80 +608,42 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str
                 except asyncio.TimeoutError:
                     pass
 
-        # Map endpoint to the corresponding variable
-        endpoint_map = {
-            "vehicle_positions": SWIFTLY_GTFS_RT_VEHICLE_POSITIONS,
-            "trip_updates": SWIFTLY_GTFS_RT_TRIP_UPDATES
-        }
-        endpoint_var = endpoint_map.get(endpoint)
-
-        # Subscribe to the Redis pubsub channel
-        cache_key = f'{endpoint_var}_{agency_id}_all'
-        async with psub as p:
-            await p.subscribe(cache_key)
-            await reader(p)  # wait for reader to complete
-            await p.unsubscribe(cache_key)
-
-    finally:
-        connected_clients -= 1
-
-    # closing all open connections
-    await psub.close()
-    redis.close()
-    await redis.wait_closed()
-
-@app.websocket("/ws/{agency_id}/{endpoint}")
-async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str):
-    global connected_clients
-    connected_clients += 1
-    try:
-        await websocket.accept()
-
-        redis = app.state.redis_pool
-        psub = redis.pubsub()
-
-        async def reader(channel: aioredis.client.PubSub):
+        async def publisher():
+            global connected_clients
+            data = None  # Cache the data in memory
             while True:
                 try:
-                    async with async_timeout.timeout(1):
-                        message = await channel.get_message(ignore_subscribe_messages=True)
-                        if message is not None:
-                            if message["type"] == "message":
-                                try:
-                                    data = json.loads(message['data'])
-                                    # Loop over each vehicle in the entity list
-                                    for item in data.get('entity', []):
-                                        await websocket.send_text(json.dumps(item))
-                                    await asyncio.sleep(3)
-                                except Exception as e:
-                                    await websocket.send_text(f"Error: {str(e)}")
-                        await asyncio.sleep(3)
-                except asyncio.TimeoutError:
-                    pass
+                    # Only fetch data if there are connected clients
+                    if connected_clients > 0:
+                        # Fetch data from Redis
+                        cache_key = f'{source}_{service}_all'
+                        cached_data = await redis.get(cache_key)
+                        if cached_data is not None:
+                            data = json.loads(cached_data)
+                            await websocket.send_text(f"Fetched data: {data}")  # Debugging line
+                    # Publish the data
+                    if data is not None:
+                        await redis.publish(f'{source}_{service}_all', json.dumps(data))
+                    await asyncio.sleep(4)  # Sleep for 4 seconds
+                except Exception as e:
+                    await websocket.send_text(f"Error: {str(e)}")
 
-        # Map endpoint to the corresponding variable
-        endpoint_map = {
-            "vehicle_positions": SWIFTLY_GTFS_RT_VEHICLE_POSITIONS,
-            "trip_updates": SWIFTLY_GTFS_RT_TRIP_UPDATES
-        }
-        endpoint_var = endpoint_map.get(endpoint)
+        # Start the publisher and reader as separate tasks
+        asyncio.create_task(publisher())
 
-        # Subscribe to the Redis pubsub channel
-        cache_key = f'{endpoint_var}_{agency_id}_all'
         async with psub as p:
-            await p.subscribe(cache_key)
+            await p.subscribe(f'{source}_{service}_all')  # Use service instead of agency_id
             await reader(p)  # wait for reader to complete
-            await p.unsubscribe(cache_key)
+            await p.unsubscribe(f'{source}_{service}_all')  # Use service instead of agency_id
 
     finally:
         connected_clients -= 1
+        await websocket.send_text(f"Connection closed: {agency_id}, {source}")  # Debugging line
 
     # closing all open connections
     await psub.close()
     redis.close()
     await redis.wait_closed()
-
-
 #### END GTFS-RT Routes ####
 
 ## To-do: Currently in progress - waiting for data pipeline to be completed
@@ -951,6 +976,7 @@ def setup_logging():
 class RedisNotConnected(Exception):
     """Raised when Redis is not connected"""
     pass
+
 @app.on_event("startup")
 async def startup_event():
     try:
@@ -958,33 +984,12 @@ async def startup_event():
         app.state.redis_pool = aioredis.from_url(Config.REDIS_URL, decode_responses=True)
         setup_logging()
 
-        # Start the task to load data every 4 seconds
-        asyncio.create_task(load_data_every_4_seconds())
+        # Create a background task that fetches all data from the Swiftly API every 4 seconds
+        asyncio.create_task(load_data_every_4_seconds(app))
+
     except Exception as e:
         print(f"Failed to connect to Redis: {e}")
         raise e
-
-async def load_data_every_4_seconds():
-    redis = app.state.redis_pool  # Use the existing Redis connection
-    while True:
-        for agency_id, service in SERVICE_DICT.items():
-            for endpoint in [SWIFTLY_GTFS_RT_TRIP_UPDATES, SWIFTLY_GTFS_RT_VEHICLE_POSITIONS]:
-                data = await connect_to_swiftly(service, endpoint, Config.SWIFTLY_AUTH_KEY_BUS, Config.SWIFTLY_AUTH_KEY_RAIL)
-                if data is not False:
-                    data = json.loads(data)  # Parse JSON data to dictionary
-                    # Add route_code to each entity
-                    for entity in data.get('entity', []):
-                        route_id = entity.get('vehicle', {}).get('trip', {}).get('routeId', '')
-                        if agency_id == 'LACMTA_Rail':
-                            entity['route_code'] = route_id
-                        elif agency_id == 'LACMTA':
-                            entity['route_code'] = route_id.split('-')[0] if '-' in route_id else route_id
-
-                    cache_key = f'{endpoint}_{agency_id}_all'
-                    await redis.set(cache_key, json.dumps(data))
-                    await redis.publish(cache_key, json.dumps(data))
-        await asyncio.sleep(4)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
