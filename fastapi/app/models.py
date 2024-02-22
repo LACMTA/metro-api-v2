@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, ARRAY, inspect
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, ARRAY, inspect, Time
 from sqlalchemy.orm import class_mapper
 from sqlalchemy.dialects.postgresql import ARRAY
 
@@ -153,6 +153,18 @@ class RouteStops(Base):
     # latitude = Column(Float)
     # longitude = Column(Float)
     agency_id = Column(String)
+
+class TripShapeStopTimes(BaseModel):
+    __tablename__ = "trip_shape_stop_times"
+    route_code = Column(String, index=True)
+    day_type = Column(String, index=True)
+    direction_id = Column(Integer, index=True)
+    geometry = Column(Geometry(geometry_type='GEOMETRY', srid=4326))
+    agency_id = Column(String, index=True)
+    trip_id = Column(String, primary_key=True, index=True)
+    start_time = Column(Time)
+    end_time = Column(Time)
+    payload = Column(String)
 
 class RouteStopsGrouped(BaseModel):
     __tablename__ = "route_stops_grouped"
