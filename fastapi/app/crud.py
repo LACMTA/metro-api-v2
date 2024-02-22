@@ -51,7 +51,7 @@ import asyncio
 from sqlalchemy import select
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Type, Optional
+from typing import Dict, Any, Optional, Type
 
 from shapely.wkb import loads
 
@@ -167,6 +167,60 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
     with async_session.no_autoflush:
         if field_name and field_value:
             stmt = select(model).where(text(f"{field_name} = :value"), getattr(model, 'agency_id') == agency_id).params(value=field_value)
+        else:
+            stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
+        result = await async_session.execute(stmt)
+    data = result.scalars().all()
+
+    # Convert WKBElement to a serializable format
+    for item in data:
+        if isinstance(item, models.RouteStopsGrouped):
+            if hasattr(item, 'shape_direction_0') and item.shape_direction_0 is not None:
+                item.shape_direction_0 = mapping(load_wkb(item.shape_direction_0.desc))
+            if hasattr(item, 'shape_direction_1') and item.shape_direction_1 is not None:
+                item.shape_direction_1 = mapping(load_wkb(item.shape_direction_1.desc))
+        else:
+            if hasattr(item, 'geometry') and item.geometry is not None:
+                item.geometry = mapping(load_wkb(bytes(item.geometry.desc, 'utf-8')))
+
+    # Cache the result in Redis with the specified expiration time
+    try:
+        await redis.set(key, pickle.dumps(data), ex=cache_expiration)
+    except pickle.PicklingError as e:
+        logging.error(f"Error pickling data for Redis: {e}")
+
+    # Close the Redis connection
+    await redis.close()
+
+    return [item.to_dict() for item in data]
+
+
+async def get_data_from_many_fields_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, fields: Optional[Dict[str, Any]] = None, cache_expiration: int = None):
+    # Create a unique key for this query
+    logging.info(f"Executing query for model={model}, agency_id={agency_id}, fields={fields}")
+
+    key = f"{model.__name__}:{agency_id}:{fields}"
+
+    # Create a new Redis connection for each function call
+    redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
+    # Try to get the result from Redis
+    result = await redis.get(key)
+    if result is not None:
+        try:
+            data = pickle.loads(result)
+        except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
+            logging.error(f"Error unpickling data from Redis: {e}")
+            data = None
+        if data is not None and isinstance(data, model):
+            # If the data is a SQLAlchemy model instance, convert it to a dict
+            data = {c.key: getattr(data, c.key) for c in inspect(data).mapper.column_attrs}
+            return data
+
+    # Query the database
+    with async_session.no_autoflush:
+        if fields:
+            stmt = select(model).where(and_(*[getattr(model, field_name) == field_value for field_name, field_value in fields.items()]), getattr(model, 'agency_id') == agency_id)
         else:
             stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
         result = await async_session.execute(stmt)

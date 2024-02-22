@@ -159,8 +159,11 @@ class RouteStopsGrouped(BaseModel):
     route_code = Column(String,primary_key=True, index=True)
     payload = Column(JSON)
     agency_id = Column(String)
-    shape_direction_0 = Column(Geometry('LINESTRING', srid=4326))
-    shape_direction_1 = Column(Geometry('LINESTRING', srid=4326))
+    direction_id = Column(Integer)
+    day_type = Column(String)
+    shape_direction = Column(Geometry('LINESTRING', srid=4326))
+    # shape_direction_0 = Column(Geometry('LINESTRING', srid=4326))
+    # shape_direction_1 = Column(Geometry('LINESTRING', srid=4326))
 
 class TripShapes(Base):
     __tablename__ = "trip_shapes"
