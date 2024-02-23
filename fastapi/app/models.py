@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, ARRAY, inspect, Time
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, ARRAY, inspect, Time, TIMESTAMP
 from sqlalchemy.orm import class_mapper
 from sqlalchemy.dialects.postgresql import ARRAY
 
@@ -162,8 +162,8 @@ class TripShapeStopTimes(BaseModel):
     geometry = Column(Geometry(geometry_type='GEOMETRY', srid=4326))
     agency_id = Column(String, index=True)
     trip_id = Column(String, primary_key=True, index=True)
-    start_time = Column(Time)
-    end_time = Column(Time)
+    start_time = Column(TIMESTAMP)
+    end_time = Column(TIMESTAMP)
     payload = Column(String)
 
 class RouteStopsGrouped(BaseModel):
