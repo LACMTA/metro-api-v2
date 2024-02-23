@@ -802,6 +802,29 @@ async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: 
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
+@app.get("/{agency_id}/trip_shape_stop_times/{route_code}", tags=["Static data"])
+async def get_trip_shape_stop_times(
+    agency_id: AgencyIdEnum, 
+    route_code: str, 
+    direction_id: int, 
+    day_type: str, 
+    time: Optional[str] = None, 
+    async_db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get trip shape stop times data by route code, day type, direction id, and time.
+    """
+    model = models.TripShapeStopTimes
+    if time is None:
+        # If time is not provided, default to the current time in Los Angeles
+        la_tz = pytz.timezone('America/Los_Angeles')
+        time = datetime.now(la_tz).strftime('%H:%M:%S')
+    fields = {'route_code': route_code, 'day_type': day_type, 'direction_id': direction_id, 'time': time}
+    result = await crud.get_data_from_many_fields_async(async_db, model, agency_id.value, fields)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, direction id {direction_id}, and time {time}")
+    return result
+
 @app.get("/{agency_id}/route_stops_grouped/{route_code}", tags=["Static data"])
 async def get_route_stops_grouped_by_route_code(
     agency_id: AgencyIdEnum, 
