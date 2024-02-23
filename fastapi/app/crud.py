@@ -7,7 +7,7 @@ from datetime import datetime,timedelta
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.future import select
 
-from sqlalchemy import and_, inspect, cast, Integer
+from sqlalchemy import and_, inspect, cast, Integer,or_
 from sqlalchemy.orm import joinedload
 from sqlalchemy import exists
 from sqlalchemy.sql import text
@@ -220,7 +220,16 @@ async def get_data_from_many_fields_async(async_session: Session, model: Type[De
     # Query the database
     with async_session.no_autoflush:
         if fields:
-            stmt = select(model).where(and_(*[getattr(model, field_name) == field_value for field_name, field_value in fields.items()]), getattr(model, 'agency_id') == agency_id)
+            conditions = [getattr(model, field_name) == field_value for field_name, field_value in fields.items()]
+            conditions.append(getattr(model, 'agency_id') == agency_id)
+            # Add condition for next day
+            if 'start_time' in fields:
+                start_time = fields['start_time']
+                conditions.append(or_(
+                    and_(getattr(model, 'start_time') <= start_time, getattr(model, 'is_next_day') == False),
+                    and_(getattr(model, 'start_time') > start_time, getattr(model, 'is_next_day') == True)
+                ))
+            stmt = select(model).where(and_(*conditions))
         else:
             stmt = select(model).where(getattr(model, 'agency_id') == agency_id)
         result = await async_session.execute(stmt)

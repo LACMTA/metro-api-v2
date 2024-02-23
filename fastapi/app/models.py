@@ -164,6 +164,7 @@ class TripShapeStopTimes(BaseModel):
     trip_id = Column(String, primary_key=True, index=True)
     start_time = Column(TIMESTAMP)
     end_time = Column(TIMESTAMP)
+    is_next_day = Column(Boolean)
     payload = Column(String)
 
 class RouteStopsGrouped(BaseModel):
