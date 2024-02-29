@@ -194,12 +194,18 @@ async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], a
 
     return [item.to_dict() for item in data]
 
-
-async def get_data_from_many_fields_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, fields: Optional[Dict[str, Any]] = None, cache_expiration: int = None):
+async def get_data_from_many_fields_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    agency_id: str, 
+    fields: Optional[Dict[str, Any]] = None, 
+    cache_expiration: int = None,
+    geometry: bool = False
+):
     # Create a unique key for this query
     logging.info(f"Executing query for model={model}, agency_id={agency_id}, fields={fields}")
 
-    key = f"{model.__name__}:{agency_id}:{fields}"
+    key = f"{model.__name__}:{agency_id}:{fields}:{geometry}"
 
     # Create a new Redis connection for each function call
     redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, ARRAY, inspect, Time, TIMESTAMP
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, inspect, Time, TIMESTAMP
 from sqlalchemy.orm import class_mapper
 from sqlalchemy.dialects.postgresql import ARRAY
 
@@ -167,14 +167,29 @@ class TripShapeStopTimes(BaseModel):
     is_next_day = Column(Boolean)
     payload = Column(String)
 
+class TripDepartureTimes(BaseModel):
+    __tablename__ = "trip_departure_times"
+
+    trip_id = Column(String, primary_key=True, index=True)
+    route_code = Column(String)
+    agency_id = Column(String)
+    day_type = Column(String)
+    direction_id = Column(Integer)
+    shape_id = Column(String)
+    start_time = Column(Time)
+    end_time = Column(Time)
+    stops = Column(ARRAY(String))
+    departure_times = Column(ARRAY(String))
+    is_next_day = Column(Boolean)
+
 class RouteStopsGrouped(BaseModel):
     __tablename__ = "route_stops_grouped"
     route_code = Column(String,primary_key=True, index=True)
-    payload = Column(JSON)
-    agency_id = Column(String)
-    direction_id = Column(Integer)
-    day_type = Column(String)
-    shape_direction = Column(Geometry('LINESTRING', srid=4326))
+    # payload = Column(JSON)
+    # agency_id = Column(String)
+    # # direction_id = Column(Integer)
+    # day_type = Column(String)
+    # shape_direction = Column(Geometry('LINESTRING', srid=4326))
     # shape_direction_0 = Column(Geometry('LINESTRING', srid=4326))
     # shape_direction_1 = Column(Geometry('LINESTRING', srid=4326))
 
