@@ -15,7 +15,8 @@ import async_timeout
 import pytz
 import time
 
-from datetime import timedelta, date, datetime
+from datetime import timedelta, date, datetime,time
+
 
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query, WebSocket, WebSocketDisconnect
 from fastapi import Path as FastAPIPath
@@ -825,39 +826,75 @@ async def get_trip_shape_stop_times(
         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, direction id {direction_id}, and time {time}")
     return result
 
-@app.get("/{agency_id}/route_stops_grouped/{route_code}", tags=["Static data"])
-async def get_route_stops_grouped_by_route_code(
-    agency_id: AgencyIdEnum, 
+# @app.get("/{agency_id}/route_stops_grouped/{route_code}", tags=["Static data"])
+# async def get_route_stops_grouped_by_route_code(
+#     agency_id: AgencyIdEnum, 
+#     route_code: str, 
+#     day_type: Optional[str] = None, 
+#     direction_id: Optional[int] = None, 
+#     async_db: AsyncSession = Depends(get_async_db)
+# ):
+#     """
+#     Get route stops grouped data by route code, day type, and direction id.
+#     """
+#     model = models.RouteStopsGrouped
+#     if route_code.lower() == 'all':
+#         # Return all routes
+#         result = await crud.get_all_data_async(async_db, model, agency_id.value)
+#     elif route_code.lower() == 'list':
+#         # Return a list of route codes
+#         result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id.value)
+#     else:
+#         # Return data for a specific route code, and optionally day type and direction id
+#         if day_type is None and direction_id is None:
+#             result = await crud.get_data_async(async_db, model, agency_id.value, 'route_code', route_code)
+#         else:
+#             fields = {'route_code': route_code}
+#             if day_type is not None:
+#                 fields['day_type'] = day_type
+#             if direction_id is not None:
+#                 fields['direction_id'] = direction_id
+#             result = await crud.get_data_from_many_fields_async(async_db, model, agency_id.value, fields)
+#     if result is None:
+#         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
+#     return result
+
+@app.get("/{agency_id}/trip_departure_times/{route_code}/{direction_id}/{day_type}", tags=["Static data"])
+async def get_trip_departure_times(
+    agency_id: str, 
     route_code: str, 
-    day_type: Optional[str] = None, 
-    direction_id: Optional[int] = None, 
+    direction_id: int, 
+    day_type: str, 
+    time: Optional[str] = None,
     async_db: AsyncSession = Depends(get_async_db)
 ):
     """
-    Get route stops grouped data by route code, day type, and direction id.
+    Get trip departure times data by route code, day type, direction id.
     """
-    model = models.RouteStopsGrouped
+    model = models.TripDepartureTimes
     if route_code.lower() == 'all':
         # Return all routes
-        result = await crud.get_all_data_async(async_db, model, agency_id.value)
+        result = await crud.get_all_data_async(async_db, model, agency_id)
     elif route_code.lower() == 'list':
         # Return a list of route codes
-        result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id.value)
+        result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id)
     else:
         # Return data for a specific route code, and optionally day type and direction id
-        if day_type is None and direction_id is None:
-            result = await crud.get_data_async(async_db, model, agency_id.value, 'route_code', route_code)
+        fields = {'route_code': route_code, 'direction_id': direction_id, 'day_type': day_type}
+        result = await crud.get_data_from_many_fields_async(async_db, model, agency_id, fields)
+
+        if time is not None:
+            # Convert the time string to a datetime.time object
+            time_obj = datetime.strptime(time, "%H:%M:%S").time()
+            # Filter the result to get the closest time
+            result = min(result, key=lambda r: abs(datetime.combine(date.today(), r['start_time']) - datetime.combine(date.today(), time_obj)))
         else:
-            fields = {'route_code': route_code}
-            if day_type is not None:
-                fields['day_type'] = day_type
-            if direction_id is not None:
-                fields['direction_id'] = direction_id
-            result = await crud.get_data_from_many_fields_async(async_db, model, agency_id.value, fields)
+            # If no time is provided, return the first record
+            result = result[0] if result else None
+
     if result is None:
         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
     return result
-
 @app.get("/calendar_dates",tags=["Static data"])
 async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     result = crud.get_calendar_dates(db)
