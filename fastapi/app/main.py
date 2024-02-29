@@ -865,7 +865,7 @@ async def get_trip_departure_times(
     route_code: str, 
     direction_id: int, 
     day_type: str, 
-    time: Optional[str] = None,
+    current_time: Optional[str] = None,
     async_db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -883,12 +883,36 @@ async def get_trip_departure_times(
         fields = {'route_code': route_code, 'direction_id': direction_id, 'day_type': day_type}
         result = await crud.get_data_from_many_fields_async(async_db, model, agency_id, fields)
 
-        if time is not None:
-            # Convert the time string to a datetime.time object
-            time_obj = datetime.strptime(time, "%H:%M:%S").time()
-            # Filter the result to get the closest time
-            result = min(result, key=lambda r: abs(datetime.combine(date.today(), r['start_time']) - datetime.combine(date.today(), time_obj)))
-        else:
+        # Group the results by trip_id
+        trips = defaultdict(list)
+        for record in result:
+            trips[record['trip_id']].append(record)
+
+        # Iterate over each trip
+        for trip_id, records in trips.items():
+            if current_time is not None:
+                # Convert the current time string to a datetime.time object
+                current_time_obj = datetime.strptime(current_time, "%H:%M:%S").time()
+
+                for record in records:
+                    # Convert each time in the departure_times list to a datetime.time object
+                    departure_times = [datetime.strptime(t, "%H:%M:%S").time() for t in record['departure_times']]
+
+                    # Calculate the difference between the current time and each time in the departure_times list
+                    time_diffs = [abs(datetime.combine(date.today(), t) - datetime.combine(date.today(), current_time_obj)) for t in departure_times]
+
+                    # Find the minimum difference and the corresponding time in the departure_times list
+                    min_diff, closest_time = min(zip(time_diffs, departure_times), key=lambda x: x[0])
+
+                    # If the current time is not within the range of start_time and end_time, return the next closest time
+                    if not (record['start_time'] <= current_time_obj <= record['end_time']):
+                        record['closest_time'] = closest_time.strftime("%H:%M:%S")
+                    else:
+                        record['closest_time'] = current_time
+
+        result = dict(trips)
+
+        if not result:
             # If no time is provided, return the first record
             result = result[0] if result else None
 
