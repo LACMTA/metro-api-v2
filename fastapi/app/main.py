@@ -858,7 +858,7 @@ async def get_trip_shape_stop_times(
 #     if result is None:
 #         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
 #     return result
-
+from datetime import datetime, time
 @app.get("/{agency_id}/trip_departure_times/{route_code}/{direction_id}/{day_type}", tags=["Static data"])
 async def get_trip_departure_times(
     agency_id: str, 
@@ -887,34 +887,45 @@ async def get_trip_departure_times(
         trips = defaultdict(list)
         for record in result:
             trips[record['trip_id']].append(record)
-
         # Iterate over each trip
+        # Iterate over each trip
+        filtered_trips = {}
         for trip_id, records in trips.items():
             if current_time is not None:
                 # Convert the current time string to a datetime.time object
                 current_time_obj = datetime.strptime(current_time, "%H:%M:%S").time()
 
-                for record in records:
-                    # Convert each time in the departure_times list to a datetime.time object
-                    departure_times = [datetime.strptime(t, "%H:%M:%S").time() for t in record['departure_times']]
+                # Filter the records based on the current_time
+                filtered_records = [record for record in records if record['start_time'] <= current_time_obj <= record['end_time']]
 
-                    # Calculate the difference between the current time and each time in the departure_times list
-                    time_diffs = [abs(datetime.combine(date.today(), t) - datetime.combine(date.today(), current_time_obj)) for t in departure_times]
+                if filtered_records:  # Only proceed if there are records within the time range
+                    for record in filtered_records:
+                        # Convert each time in the departure_times list to a datetime.time object
+                        departure_times = [t if isinstance(t, time) else datetime.strptime(t, "%H:%M:%S").time() for t in record['departure_times']]
 
-                    # Find the minimum difference and the corresponding time in the departure_times list
-                    min_diff, closest_time = min(zip(time_diffs, departure_times), key=lambda x: x[0])
+                        # If current_time is in departure_times, set it as the closest_time
+                        if current_time_obj in departure_times:
+                            record['closest_time'] = current_time
+                        else:
+                            # Calculate the difference between the current time and each time in the departure_times list
+                            time_diffs = [abs(datetime.combine(date.today(), t) - datetime.combine(date.today(), current_time_obj)) for t in departure_times]
 
-                    # If the current time is not within the range of start_time and end_time, return the next closest time
-                    if not (record['start_time'] <= current_time_obj <= record['end_time']):
-                        record['closest_time'] = closest_time.strftime("%H:%M:%S")
-                    else:
-                        record['closest_time'] = current_time
+                            # Find the minimum difference and the corresponding time in the departure_times list
+                            min_diff, closest_time = min(zip(time_diffs, departure_times), key=lambda x: x[0])
 
+                            # Set the closest_time for the record
+                            record['closest_time'] = closest_time.strftime("%H:%M:%S")
+
+                    # Update the filtered_trips dictionary with the filtered records
+                    filtered_trips[trip_id] = filtered_records
+
+        trips = filtered_trips
         result = dict(trips)
 
+        # If no trips are found, find the trip with the closest departure time
         if not result:
-            # If no time is provided, return the first record
-            result = result[0] if result else None
+            closest_trip = min(trips.items(), key=lambda x: min(abs(datetime.combine(date.today(), t) - datetime.combine(date.today(), current_time_obj)) for t in [t if isinstance(t, time) else datetime.strptime(t, "%H:%M:%S").time() for record in x[1] for t in record['departure_times']]))
+            result = {closest_trip[0]: closest_trip[1]}
 
     if result is None:
         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
