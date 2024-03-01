@@ -7,7 +7,7 @@ from datetime import datetime,timedelta
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.future import select
 
-from sqlalchemy import and_, inspect, cast, Integer,or_
+from sqlalchemy import and_, inspect, cast, Integer,or_, any_
 from sqlalchemy.orm import joinedload
 from sqlalchemy import exists
 from sqlalchemy.sql import text
@@ -593,19 +593,137 @@ def get_stops_id(db, stop_code: str,agency_id: str):
     # user_dict = models.User[username]
     # return schemas.UserInDB(**user_dict)
 
-def get_trips_data(db,trip_id: str,agency_id: str):
-    if trip_id == 'list':
-        the_query = db.query(models.Trips).filter(models.Trips.agency_id == agency_id).all()
-        result = []
-        for row in the_query:
-            result.append(row.trip_id)
-        return result
-    elif trip_id == 'all':
-        the_query = db.query(models.Trips).filter(models.Trips.agency_id == agency_id).all()
-        return the_query
-    else:
-        the_query = db.query(models.Trips).filter(models.Trips.trip_id == trip_id,models.Trips.agency_id == agency_id).all()
-    return the_query
+async def get_geometry_by_shape_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    agency_id: str, 
+    shape_id: str, 
+    cache_expiration: int = None
+):
+    logging.info(f"Executing query for model={model}, agency_id={agency_id}, shape_id={shape_id}")
+
+    key = f"{model.__name__}:{agency_id}:{shape_id}"
+
+    redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
+    result = await redis.get(key)
+    if result is not None:
+        try:
+            data = pickle.loads(result)
+        except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
+            logging.error(f"Error unpickling data from Redis: {e}")
+            data = None
+        if data is not None and isinstance(data, list):
+            return data
+
+    with async_session.no_autoflush:
+        conditions = [
+            getattr(model, 'shape_id') == shape_id, 
+            getattr(model, 'agency_id') == agency_id
+        ]
+        stmt = select(model.geometry).where(and_(*conditions))
+        result = await async_session.execute(stmt)
+    data = result.scalars().all()
+
+    try:
+        await redis.set(key, pickle.dumps(data), ex=cache_expiration)
+    except pickle.PicklingError as e:
+        logging.error(f"Error pickling data for Redis: {e}")
+
+    await redis.close()
+
+    return data
+
+async def get_stops_by_shape_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    agency_id: str, 
+    shape_id: str, 
+    cache_expiration: int = None
+):
+    logging.info(f"Executing query for model={model}, agency_id={agency_id}, shape_id={shape_id}")
+
+    key = f"{model.__name__}:{agency_id}:{shape_id}"
+
+    redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
+    result = await redis.get(key)
+    if result is not None:
+        try:
+            data = pickle.loads(result)
+        except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
+            logging.error(f"Error unpickling data from Redis: {e}")
+            data = None
+        if data is not None and isinstance(data, list):
+            return data
+
+    with async_session.no_autoflush:
+        conditions = [
+            getattr(model, 'shape_id') == shape_id, 
+            getattr(model, 'agency_id') == agency_id
+        ]
+        stmt = select(model.stop_ids).where(and_(*conditions))
+        result = await async_session.execute(stmt)
+    data = result.scalars().all()
+
+    try:
+        await redis.set(key, pickle.dumps(data), ex=cache_expiration)
+    except pickle.PicklingError as e:
+        logging.error(f"Error pickling data for Redis: {e}")
+
+    await redis.close()
+
+    return data
+
+def time_to_minutes_past_midnight(time_obj: datetime.time) -> int:
+    """Convert a datetime.time object to minutes past midnight."""
+    return time_obj.hour * 60 + time_obj.minute
+
+from sqlalchemy import func 
+from sqlalchemy import select, and_, Integer, func
+from sqlalchemy.orm import Session
+from typing import Type
+from sqlalchemy.orm.decl_api import DeclarativeMeta
+
+async def get_trips_by_shape_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    shape_id: str, 
+    agency_id: str
+):
+    conditions = [
+        getattr(model, 'shape_id') == shape_id, 
+        getattr(model, 'agency_id') == agency_id
+    ]
+
+    stmt = select(model).where(and_(*conditions))
+    result = await async_session.execute(stmt)
+    return result.scalars().all()
+
+from sqlalchemy import text
+
+async def get_stop_times_by_trip_id_and_time_range_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    trip_id: str, 
+    time: datetime.time, 
+    agency_id: str
+):
+    conditions = [
+        getattr(model, 'trip_id') == trip_id, 
+        getattr(model, 'agency_id') == agency_id,
+        or_(
+            and_(
+                getattr(model, 'departure_time_clean') >= time,
+                getattr(model, 'is_next_day') == False
+            ),
+            getattr(model, 'is_next_day') == True
+        )
+    ]
+
+    stmt = select(model).where(and_(*conditions))
+    result = await async_session.execute(stmt)
+    return result.scalars().all()
 
 def get_agency_data(db, tablename,agency_id):
     aliased_table = aliased(tablename)

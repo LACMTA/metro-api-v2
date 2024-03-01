@@ -883,53 +883,69 @@ async def get_trip_departure_times(
         fields = {'route_code': route_code, 'direction_id': direction_id, 'day_type': day_type}
         result = await crud.get_data_from_many_fields_async(async_db, model, agency_id, fields)
 
-        # Group the results by trip_id
-        trips = defaultdict(list)
+        # Convert the current time string to a datetime.time object
+        current_time = current_time or datetime.now().strftime("%H:%M:%S")
+        current_time_obj = datetime.strptime(current_time, "%H:%M:%S").time()
+
+        # Group the results by shape_id and filter based on current_time
+        # Group the results by shape_id and filter based on current_time
+        shapes = defaultdict(set)
         for record in result:
-            trips[record['trip_id']].append(record)
-        # Iterate over each trip
-        # Iterate over each trip
-        filtered_trips = {}
-        for trip_id, records in trips.items():
-            if current_time is not None:
-                # Convert the current time string to a datetime.time object
-                current_time_obj = datetime.strptime(current_time, "%H:%M:%S").time()
+            start_time = record['start_time']
+            end_time = record['end_time']
 
-                # Filter the records based on the current_time
-                filtered_records = [record for record in records if record['start_time'] <= current_time_obj <= record['end_time']]
+            # Check if the trip goes into the next day
+            if start_time > end_time:
+                # The trip goes into the next day
+                if current_time_obj >= start_time or current_time_obj <= end_time:
+                    shapes[record['shape_id']].update(record['stops'])
+            else:
+                # The trip does not go into the next day
+                if start_time <= current_time_obj <= end_time:
+                    shapes[record['shape_id']].update(record['stops'])
 
-                if filtered_records:  # Only proceed if there are records within the time range
-                    for record in filtered_records:
-                        # Convert each time in the departure_times list to a datetime.time object
-                        departure_times = [t if isinstance(t, time) else datetime.strptime(t, "%H:%M:%S").time() for t in record['departure_times']]
-
-                        # If current_time is in departure_times, set it as the closest_time
-                        if current_time_obj in departure_times:
-                            record['closest_time'] = current_time
-                        else:
-                            # Calculate the difference between the current time and each time in the departure_times list
-                            time_diffs = [abs(datetime.combine(date.today(), t) - datetime.combine(date.today(), current_time_obj)) for t in departure_times]
-
-                            # Find the minimum difference and the corresponding time in the departure_times list
-                            min_diff, closest_time = min(zip(time_diffs, departure_times), key=lambda x: x[0])
-
-                            # Set the closest_time for the record
-                            record['closest_time'] = closest_time.strftime("%H:%M:%S")
-
-                    # Update the filtered_trips dictionary with the filtered records
-                    filtered_trips[trip_id] = filtered_records
-
-        trips = filtered_trips
-        result = dict(trips)
-
-        # If no trips are found, find the trip with the closest departure time
-        if not result:
-            closest_trip = min(trips.items(), key=lambda x: min(abs(datetime.combine(date.today(), t) - datetime.combine(date.today(), current_time_obj)) for t in [t if isinstance(t, time) else datetime.strptime(t, "%H:%M:%S").time() for record in x[1] for t in record['departure_times']]))
-            result = {closest_trip[0]: closest_trip[1]}
+        # Convert defaultdict to dict and assign it to result
+        # Also convert sets to lists
+        result = {shape_id: list(stops) for shape_id, stops in shapes.items()}
 
     if result is None:
         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
     return result
+@app.get("/{agency_id}/shape_info/{shape_id}", tags=["Static data"])
+async def get_shape_info(
+    agency_id: str, 
+    shape_id: str, 
+    time: str, 
+    async_db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get shape info by shape_id and time.
+    """
+    # Convert the time string to a datetime.time object
+    time_obj = datetime.strptime(time, "%H:%M:%S").time()
+
+    # Get all trips for the given shape_id
+    trips = await crud.get_trips_by_shape_id_async(async_db, models.Trips, shape_id, agency_id)
+    print(f"Trips: {trips}")
+
+    stops = []
+    # For each trip, get the stop times
+    for trip in trips:
+        stop_times = await crud.get_stop_times_by_trip_id_and_time_range_async(async_db, models.StopTimes, trip.trip_id, time_obj, agency_id)
+        print(f"Stop times for trip {trip.trip_id}: {stop_times}")
+
+        # For each stop time, get the stop details
+        for stop_time in stop_times:
+            stop = await crud.get_stop_by_id_async(async_db, models.Stops, stop_time.stop_id, agency_id)
+            print(f"Stop details for stop {stop_time.stop_id}: {stop}")
+            # Add the stop to the list of stops
+            stops.append(stop)
+
+    # Return the result
+    return {
+        'stops': stops
+    }
+
 @app.get("/calendar_dates",tags=["Static data"])
 async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     result = crud.get_calendar_dates(db)
