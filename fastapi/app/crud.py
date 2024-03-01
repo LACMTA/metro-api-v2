@@ -685,6 +685,8 @@ from sqlalchemy.orm import Session
 from typing import Type
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
+from shapely import wkt
+
 async def get_trips_by_shape_id_async(
     async_session: Session, 
     model: Type[DeclarativeMeta], 
@@ -698,7 +700,49 @@ async def get_trips_by_shape_id_async(
 
     stmt = select(model).where(and_(*conditions))
     result = await async_session.execute(stmt)
-    return result.scalars().all()
+    trips = result.scalars().all()
+
+    return trips
+async def get_geometry_by_shape_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    shape_id: str, 
+    agency_id: str
+):
+    conditions = [
+        getattr(model, 'shape_id') == shape_id, 
+        getattr(model, 'agency_id') == agency_id
+    ]
+
+    stmt = select(model).where(and_(*conditions))
+    result = await async_session.execute(stmt)
+    trip_shape = result.scalar()
+
+    # If there is no trip shape, return an empty list
+    if not trip_shape:
+        return []
+
+    # Convert the geometry WKT line string to a list of coordinates
+    line_string = wkt.loads(trip_shape.geometry)
+    geometry = list(line_string.coords)
+
+    return geometry
+async def get_trip_shape_by_trip_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    trip_id: str, 
+    agency_id: str
+):
+    conditions = [
+        getattr(model, 'trip_id') == trip_id, 
+        getattr(model, 'agency_id') == agency_id
+    ]
+
+    stmt = select(model).where(and_(*conditions))
+    result = await async_session.execute(stmt)
+    trip_shape = result.scalar()
+
+    return trip_shape
 
 from sqlalchemy import text
 
@@ -724,7 +768,20 @@ async def get_stop_times_by_trip_id_and_time_range_async(
     stmt = select(model).where(and_(*conditions))
     result = await async_session.execute(stmt)
     return result.scalars().all()
+async def get_stop_by_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    stop_id: str, 
+    agency_id: str
+):
+    conditions = [
+        getattr(model, 'stop_id') == stop_id, 
+        getattr(model, 'agency_id') == agency_id
+    ]
 
+    stmt = select(model).where(and_(*conditions))
+    result = await async_session.execute(stmt)
+    return result.scalar()
 def get_agency_data(db, tablename,agency_id):
     aliased_table = aliased(tablename)
     the_query = db.query(aliased_table).filter(getattr(aliased_table,'agency_id') == agency_id).all()

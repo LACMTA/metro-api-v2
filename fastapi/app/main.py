@@ -911,6 +911,9 @@ async def get_trip_departure_times(
     if result is None:
         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
     return result
+from shapely import wkt
+from geojson import LineString
+
 @app.get("/{agency_id}/shape_info/{shape_id}", tags=["Static data"])
 async def get_shape_info(
     agency_id: str, 
@@ -926,24 +929,31 @@ async def get_shape_info(
 
     # Get all trips for the given shape_id
     trips = await crud.get_trips_by_shape_id_async(async_db, models.Trips, shape_id, agency_id)
-    print(f"Trips: {trips}")
 
     stops = []
     # For each trip, get the stop times
     for trip in trips:
         stop_times = await crud.get_stop_times_by_trip_id_and_time_range_async(async_db, models.StopTimes, trip.trip_id, time_obj, agency_id)
-        print(f"Stop times for trip {trip.trip_id}: {stop_times}")
-
+ 
         # For each stop time, get the stop details
         for stop_time in stop_times:
-            stop = await crud.get_stop_by_id_async(async_db, models.Stops, stop_time.stop_id, agency_id)
-            print(f"Stop details for stop {stop_time.stop_id}: {stop}")
-            # Add the stop to the list of stops
-            stops.append(stop)
+            stop = await crud.get_stop_by_id_async(async_db, models.Stops, str(stop_time.stop_id), agency_id)
+            stops.append({
+                'stop_name': stop.stop_name,
+                'time': stop_time.arrival_time,
+                'stop_sequence': stop_time.stop_sequence,
+            })
+
+    # Sort the stops by stop_sequence and time
+    stops.sort(key=lambda x: (x['stop_sequence'], x['time']))
+
+    # Get the geometry for the given shape_id
+    geometry = await crud.get_geometry_by_shape_id_async(async_db, models.TripShapes, shape_id, agency_id)
 
     # Return the result
     return {
-        'stops': stops
+        'stops': stops,
+        'geometry': geometry
     }
 
 @app.get("/calendar_dates",tags=["Static data"])
