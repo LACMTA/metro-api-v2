@@ -920,7 +920,7 @@ async def get_shape_info(
             trip_array.append(trip.trip_id)
 
     for single_trip in trip_array:
-        result = await crud.get_stop_times_by_trip_id_and_time_range_async(async_db, models.StopTimes, single_trip, time_obj, agency_id, num_results)  # Update this line
+        result = await crud.get_stop_times_by_trip_id_and_time_range_async(async_db, models.StopTimes, single_trip, agency_id, num_results)  # Update this line
         stop_times_grouped = result["stop_times"]
         num_results = result["debug_info"]["results"]  # Add this line
         for stop_id_cleaned, stop_times in stop_times_grouped.items():

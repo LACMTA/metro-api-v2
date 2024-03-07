@@ -736,51 +736,32 @@ import logging
 
 from sqlalchemy import and_, func, select, text, cast, String
 
-
 async def get_stop_times_by_trip_id_and_time_range_async(
     async_session: Session, 
     model: Type[DeclarativeMeta], 
     trip_id: str, 
-    time: datetime.time, 
     agency_id: str,
     num_results: int = 3  # Number of results to return
 ):
     debug_info = {
         "function": "get_stop_times_by_trip_id_and_time_range_async",
         "trip_id": trip_id,
-        "time": str(time),
         "agency_id": agency_id,
         "conditions": [],
         "results": 0
     }
-
-    # Make sure the time input is a "naive" time object
-    if time.tzinfo is not None:
-        time = time.replace(tzinfo=None)
 
     conditions = [
         ("trip_id", getattr(model, 'trip_id') == trip_id), 
         ("agency_id", getattr(model, 'agency_id') == agency_id),
     ]
 
-    # Create a condition for the time range
-    time_condition = func.abs(
-        func.extract('hour', getattr(model, 'departure_time_clean')) * 3600 +
-        func.extract('minute', getattr(model, 'departure_time_clean')) * 60 +
-        func.extract('second', getattr(model, 'departure_time_clean')) -
-        (time.hour * 3600 + time.minute * 60 + time.second)
-    )
-
     # Create the query
     stmt = (
         select(model)
         .join(models.Stops, models.Stops.stop_id == model.stop_id_cleaned)
         .where(and_(*[cond[1] for cond in conditions]))
-        .order_by(
-            func.abs(func.time_to_sec(model.arrival_time_clean) - func.time_to_sec(time)),
-            model.stop_sequence  # Add this line
-        )
-        .limit(num_results)
+        .order_by(model.stop_sequence)  # Order by stop_sequence
     )
     # Execute the query
     results = await async_session.execute(stmt)
@@ -789,7 +770,6 @@ async def get_stop_times_by_trip_id_and_time_range_async(
     stop_times = results.scalars().all()
 
     # Group the stop times by stop_name and limit the number of times shown to 3 for each stop
-    # Group the stop times by stop_name and collect the first 3 departure times for each stop
     stop_times_grouped = {}
     for stop_time in stop_times:
         # Get the stop_name from the Stops model
@@ -803,7 +783,6 @@ async def get_stop_times_by_trip_id_and_time_range_async(
             stop_times_grouped[stop_name]["departure_times"].append(str(stop_time.departure_time_clean))
 
     return {"debug_info": debug_info, "stop_times": stop_times_grouped, "full_stops": stop_times_grouped}
-##### trip_shapes_info_endpoint handling end #####
 
 def get_agency_data(db, tablename,agency_id):
     aliased_table = aliased(tablename)
