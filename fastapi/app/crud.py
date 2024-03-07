@@ -6,12 +6,12 @@ from typing import Type, Optional
 from datetime import datetime,timedelta
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.future import select
+from sqlalchemy.types import String
 
-from sqlalchemy import and_, inspect, cast, Integer,or_, any_
+from sqlalchemy import and_, inspect, cast, Integer,or_, any_, cast
 from sqlalchemy.orm import joinedload
 from sqlalchemy import exists
 from sqlalchemy.sql import text
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
@@ -59,6 +59,13 @@ from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
+from sqlalchemy import func 
+from sqlalchemy import select, and_, Integer, func
+from sqlalchemy.orm import Session
+from typing import Type
+from sqlalchemy.orm.decl_api import DeclarativeMeta
+
+from shapely import wkt
 
 redis_connection = None
 
@@ -593,6 +600,9 @@ def get_stops_id(db, stop_code: str,agency_id: str):
     # user_dict = models.User[username]
     # return schemas.UserInDB(**user_dict)
 
+
+
+##### trip_shapes_info_endpoint handling start #####
 async def get_geometry_by_shape_id_async(
     async_session: Session, 
     model: Type[DeclarativeMeta], 
@@ -600,9 +610,12 @@ async def get_geometry_by_shape_id_async(
     shape_id: str, 
     cache_expiration: int = None
 ):
-    logging.info(f"Executing query for model={model}, agency_id={agency_id}, shape_id={shape_id}")
+    debug_info = {"function": "get_geometry_by_shape_id_async", "logs": []}
 
-    key = f"{model.__name__}:{agency_id}:{shape_id}"
+    debug_info["logs"].append(f"Executing query for model={model}, agency_id={agency_id}, shape_id={shape_id}")
+    logging.info(debug_info["logs"][-1])
+
+    key = f"{model.__name__}:{agency_id}:shape_id:{shape_id}"
 
     redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
 
@@ -611,10 +624,11 @@ async def get_geometry_by_shape_id_async(
         try:
             data = pickle.loads(result)
         except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
-            logging.error(f"Error unpickling data from Redis: {e}")
+            debug_info["logs"].append(f"Error unpickling data from Redis: {e}")
+            logging.error(debug_info["logs"][-1])
             data = None
         if data is not None and isinstance(data, list):
-            return data
+            return data, debug_info
 
     with async_session.no_autoflush:
         conditions = [
@@ -625,15 +639,19 @@ async def get_geometry_by_shape_id_async(
         result = await async_session.execute(stmt)
     data = result.scalars().all()
 
+    for item in data:
+        if hasattr(item, 'geometry') and item.geometry is not None:
+            item.geometry = geo.mapping(shape.to_shape(item.geometry))
+
     try:
         await redis.set(key, pickle.dumps(data), ex=cache_expiration)
     except pickle.PicklingError as e:
-        logging.error(f"Error pickling data for Redis: {e}")
+        debug_info["logs"].append(f"Error pickling data for Redis: {e}")
+        logging.error(debug_info["logs"][-1])
 
     await redis.close()
 
-    return data
-
+    return data, debug_info
 async def get_stops_by_shape_id_async(
     async_session: Session, 
     model: Type[DeclarativeMeta], 
@@ -679,13 +697,6 @@ def time_to_minutes_past_midnight(time_obj: datetime.time) -> int:
     """Convert a datetime.time object to minutes past midnight."""
     return time_obj.hour * 60 + time_obj.minute
 
-from sqlalchemy import func 
-from sqlalchemy import select, and_, Integer, func
-from sqlalchemy.orm import Session
-from typing import Type
-from sqlalchemy.orm.decl_api import DeclarativeMeta
-
-from shapely import wkt
 
 async def get_trips_by_shape_id_async(
     async_session: Session, 
@@ -703,30 +714,7 @@ async def get_trips_by_shape_id_async(
     trips = result.scalars().all()
 
     return trips
-async def get_geometry_by_shape_id_async(
-    async_session: Session, 
-    model: Type[DeclarativeMeta], 
-    shape_id: str, 
-    agency_id: str
-):
-    conditions = [
-        getattr(model, 'shape_id') == shape_id, 
-        getattr(model, 'agency_id') == agency_id
-    ]
-
-    stmt = select(model).where(and_(*conditions))
-    result = await async_session.execute(stmt)
-    trip_shape = result.scalar()
-
-    # If there is no trip shape, return an empty list
-    if not trip_shape:
-        return []
-
-    # Convert the geometry WKT line string to a list of coordinates
-    line_string = wkt.loads(trip_shape.geometry)
-    geometry = list(line_string.coords)
-
-    return geometry
+# 
 async def get_trip_shape_by_trip_id_async(
     async_session: Session, 
     model: Type[DeclarativeMeta], 
@@ -743,45 +731,80 @@ async def get_trip_shape_by_trip_id_async(
     trip_shape = result.scalar()
 
     return trip_shape
+from sqlalchemy.exc import DataError
+import logging
 
-from sqlalchemy import text
+from sqlalchemy import and_, func, select, text, cast, String
+
 
 async def get_stop_times_by_trip_id_and_time_range_async(
     async_session: Session, 
     model: Type[DeclarativeMeta], 
     trip_id: str, 
     time: datetime.time, 
-    agency_id: str
+    agency_id: str,
+    num_results: int = 3  # Number of results to return
 ):
+    debug_info = {
+        "function": "get_stop_times_by_trip_id_and_time_range_async",
+        "trip_id": trip_id,
+        "time": str(time),
+        "agency_id": agency_id,
+        "conditions": [],
+        "results": 0
+    }
+
+    # Make sure the time input is a "naive" time object
+    if time.tzinfo is not None:
+        time = time.replace(tzinfo=None)
+
     conditions = [
-        getattr(model, 'trip_id') == trip_id, 
-        getattr(model, 'agency_id') == agency_id,
-        or_(
-            and_(
-                getattr(model, 'departure_time_clean') >= time,
-                getattr(model, 'is_next_day') == False
-            ),
-            getattr(model, 'is_next_day') == True
+        ("trip_id", getattr(model, 'trip_id') == trip_id), 
+        ("agency_id", getattr(model, 'agency_id') == agency_id),
+    ]
+
+    # Create a condition for the time range
+    time_condition = func.abs(
+        func.extract('hour', getattr(model, 'departure_time_clean')) * 3600 +
+        func.extract('minute', getattr(model, 'departure_time_clean')) * 60 +
+        func.extract('second', getattr(model, 'departure_time_clean')) -
+        (time.hour * 3600 + time.minute * 60 + time.second)
+    )
+
+    # Create the query
+    stmt = (
+        select(model)
+        .join(models.Stops, models.Stops.stop_id == model.stop_id_cleaned)
+        .where(and_(*[cond[1] for cond in conditions]))
+        .order_by(
+            func.abs(func.time_to_sec(model.arrival_time_clean) - func.time_to_sec(time)),
+            model.stop_sequence  # Add this line
         )
-    ]
+        .limit(num_results)
+    )
+    # Execute the query
+    results = await async_session.execute(stmt)
 
-    stmt = select(model).where(and_(*conditions))
-    result = await async_session.execute(stmt)
-    return result.scalars().all()
-async def get_stop_by_id_async(
-    async_session: Session, 
-    model: Type[DeclarativeMeta], 
-    stop_id: str, 
-    agency_id: str
-):
-    conditions = [
-        getattr(model, 'stop_id') == stop_id, 
-        getattr(model, 'agency_id') == agency_id
-    ]
+    # Get the results
+    stop_times = results.scalars().all()
 
-    stmt = select(model).where(and_(*conditions))
-    result = await async_session.execute(stmt)
-    return result.scalar()
+    # Group the stop times by stop_name and limit the number of times shown to 3 for each stop
+    # Group the stop times by stop_name and collect the first 3 departure times for each stop
+    stop_times_grouped = {}
+    for stop_time in stop_times:
+        # Get the stop_name from the Stops model
+        stop = await async_session.execute(select(models.Stops).where(models.Stops.stop_id == stop_time.stop_id_cleaned))
+        stop = stop.scalars().first()
+        stop_name = stop.stop_name if stop else "Unknown"
+        if stop_name not in stop_times_grouped:
+            stop_times_grouped[stop_name] = {"arrival_times": [], "departure_times": []}
+        if len(stop_times_grouped[stop_name]["departure_times"]) < num_results:
+            stop_times_grouped[stop_name]["arrival_times"].append(str(stop_time.arrival_time_clean))
+            stop_times_grouped[stop_name]["departure_times"].append(str(stop_time.departure_time_clean))
+
+    return {"debug_info": debug_info, "stop_times": stop_times_grouped, "full_stops": stop_times_grouped}
+##### trip_shapes_info_endpoint handling end #####
+
 def get_agency_data(db, tablename,agency_id):
     aliased_table = aliased(tablename)
     the_query = db.query(aliased_table).filter(getattr(aliased_table,'agency_id') == agency_id).all()

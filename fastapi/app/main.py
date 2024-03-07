@@ -803,28 +803,7 @@ async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: 
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
-@app.get("/{agency_id}/trip_shape_stop_times/{route_code}", tags=["Static data"])
-async def get_trip_shape_stop_times(
-    agency_id: AgencyIdEnum, 
-    route_code: str, 
-    direction_id: int, 
-    day_type: str, 
-    time: Optional[str] = None, 
-    async_db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Get trip shape stop times data by route code, day type, direction id, and time.
-    """
-    model = models.TripShapeStopTimes
-    if time is None:
-        # If time is not provided, default to the current time in Los Angeles
-        la_tz = pytz.timezone('America/Los_Angeles')
-        time = datetime.now(la_tz).strftime('%H:%M:%S')
-    fields = {'route_code': route_code, 'day_type': day_type, 'direction_id': direction_id, 'time': time}
-    result = await crud.get_data_from_many_fields_async(async_db, model, agency_id.value, fields)
-    if result is None:
-        raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, direction id {direction_id}, and time {time}")
-    return result
+
 
 # @app.get("/{agency_id}/route_stops_grouped/{route_code}", tags=["Static data"])
 # async def get_route_stops_grouped_by_route_code(
@@ -919,6 +898,7 @@ async def get_shape_info(
     agency_id: str, 
     shape_id: str, 
     time: str, 
+    num_results: int = 3,
     async_db: AsyncSession = Depends(get_async_db)
 ):
     """
@@ -926,36 +906,51 @@ async def get_shape_info(
     """
     # Convert the time string to a datetime.time object
     time_obj = datetime.strptime(time, "%H:%M:%S").time()
-
+    print(time_obj)
     # Get all trips for the given shape_id
     trips = await crud.get_trips_by_shape_id_async(async_db, models.Trips, shape_id, agency_id)
-
+    
     stops = []
+    trip_array = []
+    full_stops = {}  # Change this to a dictionary
+    debug_array = []
     # For each trip, get the stop times
     for trip in trips:
-        stop_times = await crud.get_stop_times_by_trip_id_and_time_range_async(async_db, models.StopTimes, trip.trip_id, time_obj, agency_id)
- 
-        # For each stop time, get the stop details
-        for stop_time in stop_times:
-            stop = await crud.get_stop_by_id_async(async_db, models.Stops, str(stop_time.stop_id), agency_id)
-            stops.append({
-                'stop_name': stop.stop_name,
-                'time': stop_time.arrival_time,
-                'stop_sequence': stop_time.stop_sequence,
-            })
+        if trip.trip_id not in trip_array:
+            trip_array.append(trip.trip_id)
 
-    # Sort the stops by stop_sequence and time
-    stops.sort(key=lambda x: (x['stop_sequence'], x['time']))
+    for single_trip in trip_array:
+        result = await crud.get_stop_times_by_trip_id_and_time_range_async(async_db, models.StopTimes, single_trip, time_obj, agency_id, num_results)  # Update this line
+        stop_times_grouped = result["stop_times"]
+        num_results = result["debug_info"]["results"]  # Add this line
+        for stop_id_cleaned, stop_times in stop_times_grouped.items():
+            # Group the stop times by stop_id_cleaned
+            if stop_id_cleaned not in full_stops:
+                full_stops[stop_id_cleaned] = []
+            full_stops[stop_id_cleaned].extend(stop_times)
+            # Order the stop times by stop_sequence
+            debug_array.append(stop_times)  # Add this line
+        # Check if stop_times is a string (which means no stop times were found)
+        if isinstance(stop_times_grouped, str):
+            return {"error": stop_times_grouped}
 
-    # Get the geometry for the given shape_id
-    geometry = await crud.get_geometry_by_shape_id_async(async_db, models.TripShapes, shape_id, agency_id)
+    # Convert the dictionary values to a list
+    full_stops = {k: list(map(lambda x: x.to_dict() if hasattr(x, 'to_dict') else x, v)) for k, v in full_stops.items()}
+
+    # Get the geometry and debug info for the given shape_id
+    geometry, geometry_debug_info = await crud.get_geometry_by_shape_id_async(async_db, models.TripShapes, shape_id, agency_id)
+
+    # Merge the debug info from the geometry with the existing debug info
+    debug_array.append(geometry_debug_info)
 
     # Return the result
     return {
         'stops': stops,
-        'geometry': geometry
+        'geometry': geometry,
+        'trip_array': trip_array,
+        'debug_array': debug_array,
+        'full_stops': full_stops
     }
-
 @app.get("/calendar_dates",tags=["Static data"])
 async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     result = crud.get_calendar_dates(db)
