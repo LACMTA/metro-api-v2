@@ -6,12 +6,12 @@ from typing import Type, Optional
 from datetime import datetime,timedelta
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.future import select
+from sqlalchemy.types import String
 
-from sqlalchemy import and_, inspect, cast, Integer,or_
+from sqlalchemy import and_, inspect, cast, Integer,or_, any_, cast
 from sqlalchemy.orm import joinedload
 from sqlalchemy import exists
 from sqlalchemy.sql import text
-
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
@@ -59,6 +59,13 @@ from sqlalchemy import distinct
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.decl_api import DeclarativeMeta
 
+from sqlalchemy import func 
+from sqlalchemy import select, and_, Integer, func
+from sqlalchemy.orm import Session
+from typing import Type
+from sqlalchemy.orm.decl_api import DeclarativeMeta
+
+from shapely import wkt
 
 redis_connection = None
 
@@ -140,6 +147,48 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
     return unique_keys
 
 ####
+
+async def get_route_details(db: AsyncSession, route_code: str, direction_id: int, day_type: str, p_time: str, num_results: int, cache_expiration: Optional[int] = None):
+	# Create a unique key for this query
+	logging.info(f"Executing query for route_code={route_code}, direction_id={direction_id}, day_type={day_type}, time={p_time}, num_results={num_results}")
+
+	key = f"get_route_details:{route_code}:{direction_id}:{day_type}:{p_time}:{num_results}"
+
+	# Create a new Redis connection for each function call
+	redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
+	# Try to get the result from Redis
+	result = await redis.get(key)
+	if result is not None:
+		try:
+			data = pickle.loads(result)
+		except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
+			logging.error(f"Error unpickling data from Redis: {e}")
+			data = None
+		if data is not None:
+			return data
+
+	p_time_obj = datetime.strptime(p_time, "%H:%M:%S").time()
+
+	# Then pass this time object to the query
+	# Query the database
+	query = text("SELECT * FROM metro_api.get_route_details(:p_route_code, :p_direction_id, :p_day_type, :p_input_time, :p_num_results)")
+	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type, 'p_input_time': p_time_obj, 'p_num_results': num_results})
+
+	# Fetch all rows from the result
+	data = result.fetchall()
+
+	# Cache the result in Redis with the specified expiration time
+	try:
+		await redis.set(key, pickle.dumps(data), ex=cache_expiration)
+	except pickle.PicklingError as e:
+		logging.error(f"Error pickling data for Redis: {e}")
+
+	# Close the Redis connection
+	await redis.close()
+
+	return data
+
 
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
@@ -593,19 +642,189 @@ def get_stops_id(db, stop_code: str,agency_id: str):
     # user_dict = models.User[username]
     # return schemas.UserInDB(**user_dict)
 
-def get_trips_data(db,trip_id: str,agency_id: str):
-    if trip_id == 'list':
-        the_query = db.query(models.Trips).filter(models.Trips.agency_id == agency_id).all()
-        result = []
-        for row in the_query:
-            result.append(row.trip_id)
-        return result
-    elif trip_id == 'all':
-        the_query = db.query(models.Trips).filter(models.Trips.agency_id == agency_id).all()
-        return the_query
-    else:
-        the_query = db.query(models.Trips).filter(models.Trips.trip_id == trip_id,models.Trips.agency_id == agency_id).all()
-    return the_query
+
+
+##### trip_shapes_info_endpoint handling start #####
+async def get_geometry_by_shape_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    agency_id: str, 
+    shape_id: str, 
+    cache_expiration: int = None
+):
+    debug_info = {"function": "get_geometry_by_shape_id_async", "logs": []}
+
+    debug_info["logs"].append(f"Executing query for model={model}, agency_id={agency_id}, shape_id={shape_id}")
+    logging.info(debug_info["logs"][-1])
+
+    key = f"{model.__name__}:{agency_id}:shape_id:{shape_id}"
+
+    redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
+    result = await redis.get(key)
+    if result is not None:
+        try:
+            data = pickle.loads(result)
+        except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
+            debug_info["logs"].append(f"Error unpickling data from Redis: {e}")
+            logging.error(debug_info["logs"][-1])
+            data = None
+        if data is not None and isinstance(data, list):
+            return data, debug_info
+
+    with async_session.no_autoflush:
+        conditions = [
+            getattr(model, 'shape_id') == shape_id, 
+            getattr(model, 'agency_id') == agency_id
+        ]
+        stmt = select(model.geometry).where(and_(*conditions))
+        result = await async_session.execute(stmt)
+    data = result.scalars().all()
+
+    for item in data:
+        if hasattr(item, 'geometry') and item.geometry is not None:
+            item.geometry = geo.mapping(shape.to_shape(item.geometry))
+
+    try:
+        await redis.set(key, pickle.dumps(data), ex=cache_expiration)
+    except pickle.PicklingError as e:
+        debug_info["logs"].append(f"Error pickling data for Redis: {e}")
+        logging.error(debug_info["logs"][-1])
+
+    await redis.close()
+
+    return data, debug_info
+async def get_stops_by_shape_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    agency_id: str, 
+    shape_id: str, 
+    cache_expiration: int = None
+):
+    logging.info(f"Executing query for model={model}, agency_id={agency_id}, shape_id={shape_id}")
+
+    key = f"{model.__name__}:{agency_id}:{shape_id}"
+
+    redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
+    result = await redis.get(key)
+    if result is not None:
+        try:
+            data = pickle.loads(result)
+        except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
+            logging.error(f"Error unpickling data from Redis: {e}")
+            data = None
+        if data is not None and isinstance(data, list):
+            return data
+
+    with async_session.no_autoflush:
+        conditions = [
+            getattr(model, 'shape_id') == shape_id, 
+            getattr(model, 'agency_id') == agency_id
+        ]
+        stmt = select(model.stop_ids).where(and_(*conditions))
+        result = await async_session.execute(stmt)
+    data = result.scalars().all()
+
+    try:
+        await redis.set(key, pickle.dumps(data), ex=cache_expiration)
+    except pickle.PicklingError as e:
+        logging.error(f"Error pickling data for Redis: {e}")
+
+    await redis.close()
+
+    return data
+
+def time_to_minutes_past_midnight(time_obj: datetime.time) -> int:
+    """Convert a datetime.time object to minutes past midnight."""
+    return time_obj.hour * 60 + time_obj.minute
+
+
+async def get_trips_by_shape_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    shape_id: str, 
+    agency_id: str
+):
+    conditions = [
+        getattr(model, 'shape_id') == shape_id, 
+        getattr(model, 'agency_id') == agency_id
+    ]
+
+    stmt = select(model).where(and_(*conditions))
+    result = await async_session.execute(stmt)
+    trips = result.scalars().all()
+
+    return trips
+# 
+async def get_trip_shape_by_trip_id_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    trip_id: str, 
+    agency_id: str
+):
+    conditions = [
+        getattr(model, 'trip_id') == trip_id, 
+        getattr(model, 'agency_id') == agency_id
+    ]
+
+    stmt = select(model).where(and_(*conditions))
+    result = await async_session.execute(stmt)
+    trip_shape = result.scalar()
+
+    return trip_shape
+from sqlalchemy.exc import DataError
+import logging
+
+from sqlalchemy import and_, func, select, text, cast, String
+
+async def get_stop_times_by_trip_id_and_time_range_async(
+    async_session: Session, 
+    model: Type[DeclarativeMeta], 
+    trip_id: str, 
+    agency_id: str,
+    num_results: int = 3  # Number of results to return
+):
+    debug_info = {
+        "function": "get_stop_times_by_trip_id_and_time_range_async",
+        "trip_id": trip_id,
+        "agency_id": agency_id,
+        "conditions": [],
+        "results": 0
+    }
+
+    conditions = [
+        ("trip_id", getattr(model, 'trip_id') == trip_id), 
+        ("agency_id", getattr(model, 'agency_id') == agency_id),
+    ]
+
+    # Create the query
+    stmt = (
+        select(model)
+        .join(models.Stops, models.Stops.stop_id == model.stop_id_cleaned)
+        .where(and_(*[cond[1] for cond in conditions]))
+        .order_by(model.stop_sequence)  # Order by stop_sequence
+    )
+    # Execute the query
+    results = await async_session.execute(stmt)
+
+    # Get the results
+    stop_times = results.scalars().all()
+
+    # Group the stop times by stop_name and limit the number of times shown to 3 for each stop
+    stop_times_grouped = {}
+    for stop_time in stop_times:
+        # Get the stop_name from the Stops model
+        stop = await async_session.execute(select(models.Stops).where(models.Stops.stop_id == stop_time.stop_id_cleaned))
+        stop = stop.scalars().first()
+        stop_name = stop.stop_name if stop else "Unknown"
+        if stop_name not in stop_times_grouped:
+            stop_times_grouped[stop_name] = {"arrival_times": [], "departure_times": []}
+        if len(stop_times_grouped[stop_name]["departure_times"]) < num_results:
+            stop_times_grouped[stop_name]["arrival_times"].append(str(stop_time.arrival_time_clean))
+            stop_times_grouped[stop_name]["departure_times"].append(str(stop_time.departure_time_clean))
+
+    return {"debug_info": debug_info, "stop_times": stop_times_grouped, "full_stops": stop_times_grouped}
 
 def get_agency_data(db, tablename,agency_id):
     aliased_table = aliased(tablename)

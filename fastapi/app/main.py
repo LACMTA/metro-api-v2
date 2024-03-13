@@ -665,6 +665,7 @@ async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: O
     "Error: error_message"
     """
     raise HTTPException(status_code=400, detail="This endpoint is for WebSocket connections only.")
+
 @app.websocket("/ws/{agency_id}/{endpoint}")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str):
     """
@@ -803,62 +804,6 @@ async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: 
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
-@app.get("/{agency_id}/trip_shape_stop_times/{route_code}", tags=["Static data"])
-async def get_trip_shape_stop_times(
-    agency_id: AgencyIdEnum, 
-    route_code: str, 
-    direction_id: int, 
-    day_type: str, 
-    time: Optional[str] = None, 
-    async_db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Get trip shape stop times data by route code, day type, direction id, and time.
-    """
-    model = models.TripShapeStopTimes
-    if time is None:
-        # If time is not provided, default to the current time in Los Angeles
-        la_tz = pytz.timezone('America/Los_Angeles')
-        time = datetime.now(la_tz).strftime('%H:%M:%S')
-    fields = {'route_code': route_code, 'day_type': day_type, 'direction_id': direction_id, 'time': time}
-    result = await crud.get_data_from_many_fields_async(async_db, model, agency_id.value, fields)
-    if result is None:
-        raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, direction id {direction_id}, and time {time}")
-    return result
-
-# @app.get("/{agency_id}/route_stops_grouped/{route_code}", tags=["Static data"])
-# async def get_route_stops_grouped_by_route_code(
-#     agency_id: AgencyIdEnum, 
-#     route_code: str, 
-#     day_type: Optional[str] = None, 
-#     direction_id: Optional[int] = None, 
-#     async_db: AsyncSession = Depends(get_async_db)
-# ):
-#     """
-#     Get route stops grouped data by route code, day type, and direction id.
-#     """
-#     model = models.RouteStopsGrouped
-#     if route_code.lower() == 'all':
-#         # Return all routes
-#         result = await crud.get_all_data_async(async_db, model, agency_id.value)
-#     elif route_code.lower() == 'list':
-#         # Return a list of route codes
-#         result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id.value)
-#     else:
-#         # Return data for a specific route code, and optionally day type and direction id
-#         if day_type is None and direction_id is None:
-#             result = await crud.get_data_async(async_db, model, agency_id.value, 'route_code', route_code)
-#         else:
-#             fields = {'route_code': route_code}
-#             if day_type is not None:
-#                 fields['day_type'] = day_type
-#             if direction_id is not None:
-#                 fields['direction_id'] = direction_id
-#             result = await crud.get_data_from_many_fields_async(async_db, model, agency_id.value, fields)
-#     if result is None:
-#         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
-#     return result
-from datetime import datetime, time
 @app.get("/{agency_id}/trip_departure_times/{route_code}/{direction_id}/{day_type}", tags=["Static data"])
 async def get_trip_departure_times(
     agency_id: str, 
@@ -883,53 +828,118 @@ async def get_trip_departure_times(
         fields = {'route_code': route_code, 'direction_id': direction_id, 'day_type': day_type}
         result = await crud.get_data_from_many_fields_async(async_db, model, agency_id, fields)
 
-        # Group the results by trip_id
-        trips = defaultdict(list)
+        # Convert the current time string to a datetime.time object
+        current_time = current_time or datetime.now().strftime("%H:%M:%S")
+        current_time_obj = datetime.strptime(current_time, "%H:%M:%S").time()
+
+        # Group the results by shape_id and filter based on current_time
+        # Group the results by shape_id and filter based on current_time
+        shapes = defaultdict(set)
         for record in result:
-            trips[record['trip_id']].append(record)
-        # Iterate over each trip
-        # Iterate over each trip
-        filtered_trips = {}
-        for trip_id, records in trips.items():
-            if current_time is not None:
-                # Convert the current time string to a datetime.time object
-                current_time_obj = datetime.strptime(current_time, "%H:%M:%S").time()
+            start_time = record['start_time']
+            end_time = record['end_time']
 
-                # Filter the records based on the current_time
-                filtered_records = [record for record in records if record['start_time'] <= current_time_obj <= record['end_time']]
+            # Check if the trip goes into the next day
+            if start_time > end_time:
+                # The trip goes into the next day
+                if current_time_obj >= start_time or current_time_obj <= end_time:
+                    shapes[record['shape_id']].update(record['stops'])
+            else:
+                # The trip does not go into the next day
+                if start_time <= current_time_obj <= end_time:
+                    shapes[record['shape_id']].update(record['stops'])
 
-                if filtered_records:  # Only proceed if there are records within the time range
-                    for record in filtered_records:
-                        # Convert each time in the departure_times list to a datetime.time object
-                        departure_times = [t if isinstance(t, time) else datetime.strptime(t, "%H:%M:%S").time() for t in record['departure_times']]
-
-                        # If current_time is in departure_times, set it as the closest_time
-                        if current_time_obj in departure_times:
-                            record['closest_time'] = current_time
-                        else:
-                            # Calculate the difference between the current time and each time in the departure_times list
-                            time_diffs = [abs(datetime.combine(date.today(), t) - datetime.combine(date.today(), current_time_obj)) for t in departure_times]
-
-                            # Find the minimum difference and the corresponding time in the departure_times list
-                            min_diff, closest_time = min(zip(time_diffs, departure_times), key=lambda x: x[0])
-
-                            # Set the closest_time for the record
-                            record['closest_time'] = closest_time.strftime("%H:%M:%S")
-
-                    # Update the filtered_trips dictionary with the filtered records
-                    filtered_trips[trip_id] = filtered_records
-
-        trips = filtered_trips
-        result = dict(trips)
-
-        # If no trips are found, find the trip with the closest departure time
-        if not result:
-            closest_trip = min(trips.items(), key=lambda x: min(abs(datetime.combine(date.today(), t) - datetime.combine(date.today(), current_time_obj)) for t in [t if isinstance(t, time) else datetime.strptime(t, "%H:%M:%S").time() for record in x[1] for t in record['departure_times']]))
-            result = {closest_trip[0]: closest_trip[1]}
+        # Convert defaultdict to dict and assign it to result
+        # Also convert sets to lists
+        result = {shape_id: list(stops) for shape_id, stops in shapes.items()}
 
     if result is None:
         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
     return result
+from shapely import wkt
+from geojson import LineString
+
+@app.get("/{agency_id}/route_details/{route_code}", tags=["Static data"])
+async def route_details_endpoint(
+	agency_id: str, 
+	route_code: str, 
+	direction_id: int = Query(...), 
+	day_type: str = Query(...), 
+	time: str = Query(...), 
+	num_results: int = Query(3),
+	db: AsyncSession = Depends(get_db)
+):
+	"""
+	Get route details by route_code, direction_id, day_type, and time.
+    e.g. 
+    /LACMTA/route_details/720?direction_id=1&day_type=weekday&time=12:00:00&num_results=3
+	"""
+	# Convert the time string to a datetime.time object
+	route_details = await crud.get_route_details(db, route_code, direction_id, day_type, time, num_results)
+
+	if not route_details:
+		raise HTTPException(status_code=404, detail="Route details not found")
+
+	return route_details
+
+@app.get("/{agency_id}/shape_info/{shape_id}", tags=["Static data"])
+async def get_shape_info(
+    agency_id: str, 
+    shape_id: str, 
+    time: str, 
+    num_results: int = 3,
+    async_db: AsyncSession = Depends(get_async_db)
+):
+    """
+    Get shape info by shape_id and time.
+    """
+    # Convert the time string to a datetime.time object
+    time_obj = datetime.strptime(time, "%H:%M:%S").time()
+    print(time_obj)
+    # Get all trips for the given shape_id
+    trips = await crud.get_trips_by_shape_id_async(async_db, models.Trips, shape_id, agency_id)
+    
+    stops = []
+    trip_array = []
+    full_stops = {}  # Change this to a dictionary
+    debug_array = []
+    # For each trip, get the stop times
+    for trip in trips:
+        if trip.trip_id not in trip_array:
+            trip_array.append(trip.trip_id)
+
+    for single_trip in trip_array:
+        result = await crud.get_stop_times_by_trip_id_and_time_range_async(async_db, models.StopTimes, single_trip, agency_id, num_results)  # Update this line
+        stop_times_grouped = result["stop_times"]
+        num_results = result["debug_info"]["results"]  # Add this line
+        for stop_id_cleaned, stop_times in stop_times_grouped.items():
+            # Group the stop times by stop_id_cleaned
+            if stop_id_cleaned not in full_stops:
+                full_stops[stop_id_cleaned] = []
+            full_stops[stop_id_cleaned].extend(stop_times)
+            # Order the stop times by stop_sequence
+            debug_array.append(stop_times)  # Add this line
+        # Check if stop_times is a string (which means no stop times were found)
+        if isinstance(stop_times_grouped, str):
+            return {"error": stop_times_grouped}
+
+    # Convert the dictionary values to a list
+    full_stops = {k: list(map(lambda x: x.to_dict() if hasattr(x, 'to_dict') else x, v)) for k, v in full_stops.items()}
+
+    # Get the geometry and debug info for the given shape_id
+    geometry, geometry_debug_info = await crud.get_geometry_by_shape_id_async(async_db, models.TripShapes, shape_id, agency_id)
+
+    # Merge the debug info from the geometry with the existing debug info
+    debug_array.append(geometry_debug_info)
+
+    # Return the result
+    return {
+        'stops': stops,
+        'geometry': geometry,
+        'trip_array': trip_array,
+        'debug_array': debug_array,
+        'full_stops': full_stops
+    }
 @app.get("/calendar_dates",tags=["Static data"])
 async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     result = crud.get_calendar_dates(db)

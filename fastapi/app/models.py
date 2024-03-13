@@ -1,6 +1,7 @@
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, inspect, Time, TIMESTAMP
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float,PrimaryKeyConstraint,JSON, join, inspect, Time, TIMESTAMP, UniqueConstraint
 from sqlalchemy.orm import class_mapper
 from sqlalchemy.dialects.postgresql import ARRAY
+
 
 from geoalchemy2 import *
 from geoalchemy2.shape import to_shape
@@ -61,7 +62,11 @@ class StopTimes(BaseModel):
     __tablename__ = "stop_times"
     arrival_time = Column(String)
     departure_time = Column(String)
+    arrival_time_clean = Column(Time)
+    departure_time_clean = Column(Time)
+    is_next_day = Column(Boolean)
     stop_id = Column(Integer, index=True)
+    stop_id_cleaned = Column(String)
     stop_sequence = Column(Integer,primary_key=True, index=True)
     stop_headsign = Column(String)
     pickup_type = Column(Integer)
@@ -180,7 +185,9 @@ class TripDepartureTimes(BaseModel):
     end_time = Column(Time)
     stops = Column(ARRAY(String))
     departure_times = Column(ARRAY(String))
+    stop_ids = Column(ARRAY(String))
     is_next_day = Column(Boolean)
+    __table_args__ = (UniqueConstraint('trip_id', 'route_code', name='trip_id_route_code_key'),)
 
 class RouteStopsGrouped(BaseModel):
     __tablename__ = "route_stops_grouped"
