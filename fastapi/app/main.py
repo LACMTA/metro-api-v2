@@ -893,6 +893,29 @@ async def get_trip_departure_times(
 from shapely import wkt
 from geojson import LineString
 
+@app.get("/{agency_id}/route_details/{route_code}", tags=["Dynamic data"])
+async def route_details_endpoint(
+	agency_id: str, 
+	route_code: str, 
+	direction_id: int = Query(...), 
+	day_type: str = Query(...), 
+	time: str = Query(...), 
+	num_results: int = Query(3),
+	db: AsyncSession = Depends(get_db)
+):
+	"""
+	Get route details by route_code, direction_id, day_type, and time.
+    e.g. 
+    /LACMTA/route_details/720?direction_id=1&day_type=weekday&time=12:00:00&num_results=3
+	"""
+	# Convert the time string to a datetime.time object
+	route_details = await crud.get_route_details(db, route_code, direction_id, day_type, time, num_results)
+
+	if not route_details:
+		raise HTTPException(status_code=404, detail="Route details not found")
+
+	return route_details
+
 @app.get("/{agency_id}/shape_info/{shape_id}", tags=["Static data"])
 async def get_shape_info(
     agency_id: str, 

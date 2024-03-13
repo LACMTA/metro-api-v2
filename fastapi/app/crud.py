@@ -147,6 +147,47 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
     return unique_keys
 
 ####
+async def get_route_details(db: AsyncSession, route_code: str, direction_id: int, day_type: str, p_time: str, num_results: int, cache_expiration: Optional[int] = None):
+	# Create a unique key for this query
+	logging.info(f"Executing query for route_code={route_code}, direction_id={direction_id}, day_type={day_type}, time={p_time}, num_results={num_results}")
+
+	key = f"get_route_details:{route_code}:{direction_id}:{day_type}:{p_time}:{num_results}"
+
+	# Create a new Redis connection for each function call
+	redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
+
+	# Try to get the result from Redis
+	result = await redis.get(key)
+	if result is not None:
+		try:
+			data = pickle.loads(result)
+		except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
+			logging.error(f"Error unpickling data from Redis: {e}")
+			data = None
+		if data is not None:
+			return data
+
+	p_time_obj = datetime.strptime(p_time, "%H:%M:%S").time()
+
+	# Then pass this time object to the query
+	# Query the database
+	query = text("SELECT * FROM metro_api.get_route_details(:p_route_code, :p_direction_id, :p_day_type, :p_input_time, :p_num_results)")
+	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type, 'p_input_time': p_time_obj, 'p_num_results': num_results})
+
+	# Fetch all rows from the result
+	data = result.fetchall()
+
+	# Cache the result in Redis with the specified expiration time
+	try:
+		await redis.set(key, pickle.dumps(data), ex=cache_expiration)
+	except pickle.PicklingError as e:
+		logging.error(f"Error pickling data for Redis: {e}")
+
+	# Close the Redis connection
+	await redis.close()
+
+	return data
+
 
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
