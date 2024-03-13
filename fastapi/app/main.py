@@ -665,6 +665,7 @@ async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: O
     "Error: error_message"
     """
     raise HTTPException(status_code=400, detail="This endpoint is for WebSocket connections only.")
+
 @app.websocket("/ws/{agency_id}/{endpoint}")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str):
     """
@@ -803,41 +804,6 @@ async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: 
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
-
-
-# @app.get("/{agency_id}/route_stops_grouped/{route_code}", tags=["Static data"])
-# async def get_route_stops_grouped_by_route_code(
-#     agency_id: AgencyIdEnum, 
-#     route_code: str, 
-#     day_type: Optional[str] = None, 
-#     direction_id: Optional[int] = None, 
-#     async_db: AsyncSession = Depends(get_async_db)
-# ):
-#     """
-#     Get route stops grouped data by route code, day type, and direction id.
-#     """
-#     model = models.RouteStopsGrouped
-#     if route_code.lower() == 'all':
-#         # Return all routes
-#         result = await crud.get_all_data_async(async_db, model, agency_id.value)
-#     elif route_code.lower() == 'list':
-#         # Return a list of route codes
-#         result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id.value)
-#     else:
-#         # Return data for a specific route code, and optionally day type and direction id
-#         if day_type is None and direction_id is None:
-#             result = await crud.get_data_async(async_db, model, agency_id.value, 'route_code', route_code)
-#         else:
-#             fields = {'route_code': route_code}
-#             if day_type is not None:
-#                 fields['day_type'] = day_type
-#             if direction_id is not None:
-#                 fields['direction_id'] = direction_id
-#             result = await crud.get_data_from_many_fields_async(async_db, model, agency_id.value, fields)
-#     if result is None:
-#         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
-#     return result
-from datetime import datetime, time
 @app.get("/{agency_id}/trip_departure_times/{route_code}/{direction_id}/{day_type}", tags=["Static data"])
 async def get_trip_departure_times(
     agency_id: str, 

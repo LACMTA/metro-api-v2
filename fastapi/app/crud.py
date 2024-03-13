@@ -147,6 +147,7 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
     return unique_keys
 
 ####
+
 async def get_route_details(db: AsyncSession, route_code: str, direction_id: int, day_type: str, p_time: str, num_results: int, cache_expiration: Optional[int] = None):
 	# Create a unique key for this query
 	logging.info(f"Executing query for route_code={route_code}, direction_id={direction_id}, day_type={day_type}, time={p_time}, num_results={num_results}")
