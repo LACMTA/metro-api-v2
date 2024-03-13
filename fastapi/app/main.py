@@ -893,7 +893,7 @@ async def get_trip_departure_times(
 from shapely import wkt
 from geojson import LineString
 
-@app.get("/{agency_id}/route_details/{route_code}", tags=["Dynamic data"])
+@app.get("/{agency_id}/route_details/{route_code}", tags=["Static data"])
 async def route_details_endpoint(
 	agency_id: str, 
 	route_code: str, 
