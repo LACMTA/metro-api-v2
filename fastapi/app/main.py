@@ -665,6 +665,7 @@ async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: O
     "Error: error_message"
     """
     raise HTTPException(status_code=400, detail="This endpoint is for WebSocket connections only.")
+
 @app.websocket("/ws/{agency_id}/{endpoint}")
 async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str):
     """
@@ -803,41 +804,6 @@ async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: 
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
-
-
-# @app.get("/{agency_id}/route_stops_grouped/{route_code}", tags=["Static data"])
-# async def get_route_stops_grouped_by_route_code(
-#     agency_id: AgencyIdEnum, 
-#     route_code: str, 
-#     day_type: Optional[str] = None, 
-#     direction_id: Optional[int] = None, 
-#     async_db: AsyncSession = Depends(get_async_db)
-# ):
-#     """
-#     Get route stops grouped data by route code, day type, and direction id.
-#     """
-#     model = models.RouteStopsGrouped
-#     if route_code.lower() == 'all':
-#         # Return all routes
-#         result = await crud.get_all_data_async(async_db, model, agency_id.value)
-#     elif route_code.lower() == 'list':
-#         # Return a list of route codes
-#         result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id.value)
-#     else:
-#         # Return data for a specific route code, and optionally day type and direction id
-#         if day_type is None and direction_id is None:
-#             result = await crud.get_data_async(async_db, model, agency_id.value, 'route_code', route_code)
-#         else:
-#             fields = {'route_code': route_code}
-#             if day_type is not None:
-#                 fields['day_type'] = day_type
-#             if direction_id is not None:
-#                 fields['direction_id'] = direction_id
-#             result = await crud.get_data_from_many_fields_async(async_db, model, agency_id.value, fields)
-#     if result is None:
-#         raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
-#     return result
-from datetime import datetime, time
 @app.get("/{agency_id}/trip_departure_times/{route_code}/{direction_id}/{day_type}", tags=["Static data"])
 async def get_trip_departure_times(
     agency_id: str, 
@@ -892,6 +858,29 @@ async def get_trip_departure_times(
     return result
 from shapely import wkt
 from geojson import LineString
+
+@app.get("/{agency_id}/route_details/{route_code}", tags=["Static data"])
+async def route_details_endpoint(
+	agency_id: str, 
+	route_code: str, 
+	direction_id: int = Query(...), 
+	day_type: str = Query(...), 
+	time: str = Query(...), 
+	num_results: int = Query(3),
+	db: AsyncSession = Depends(get_db)
+):
+	"""
+	Get route details by route_code, direction_id, day_type, and time.
+    e.g. 
+    /LACMTA/route_details/720?direction_id=1&day_type=weekday&time=12:00:00&num_results=3
+	"""
+	# Convert the time string to a datetime.time object
+	route_details = await crud.get_route_details(db, route_code, direction_id, day_type, time, num_results)
+
+	if not route_details:
+		raise HTTPException(status_code=404, detail="Route details not found")
+
+	return route_details
 
 @app.get("/{agency_id}/shape_info/{shape_id}", tags=["Static data"])
 async def get_shape_info(
