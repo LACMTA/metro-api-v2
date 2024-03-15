@@ -888,7 +888,7 @@ async def route_details_endpoint(
 
     if not route_details:
         raise HTTPException(status_code=404, detail="Route details not found")
-
+    return route_details
 
 @app.get("/{agency_id}/shape_info/{shape_id}", tags=["Static data"])
 async def get_shape_info(
