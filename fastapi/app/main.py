@@ -872,7 +872,7 @@ from geojson import LineString
 async def route_details_endpoint(
     agency_id: str, 
     route_code: str, 
-    direction_id: DirectionId = Query(...), 
+    direction_id: int = Query(..., ge=0, le=1),
     day_type: DayType = Query(...), 
     time: str = Query(...),  
     num_results: int = Query(3, ge=1),
