@@ -5,19 +5,13 @@ from turtle import position
 from typing import Type, Optional
 from datetime import datetime,timedelta
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy.future import select
-from sqlalchemy.types import String
+from collections import defaultdict
+from operator import itemgetter
 
-from sqlalchemy import and_, inspect, cast, Integer,or_, any_, cast
-from sqlalchemy.orm import joinedload
-from sqlalchemy import exists
-from sqlalchemy.sql import text
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from jose import JWTError, jwt
-from sqlalchemy.orm import aliased
-from sqlalchemy import and_
 from fastapi_pagination.ext.sqlalchemy import paginate as paginate_sqlalchemy
 
 from geoalchemy2 import functions,shape
@@ -48,7 +42,6 @@ import time
 import logging
 import asyncio
 
-from sqlalchemy import select
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Dict, Any, Optional, Type
@@ -56,14 +49,15 @@ from typing import Dict, Any, Optional, Type
 from shapely.wkb import loads
 
 from sqlalchemy import distinct
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased, joinedload
 from sqlalchemy.orm.decl_api import DeclarativeMeta
-
-from sqlalchemy import func 
+from sqlalchemy.future import select
+from sqlalchemy.types import String
+from sqlalchemy import and_, inspect, cast, Integer,or_, any_, cast, exists
+from sqlalchemy.sql import text
 from sqlalchemy import select, and_, Integer, func
-from sqlalchemy.orm import Session
+
 from typing import Type
-from sqlalchemy.orm.decl_api import DeclarativeMeta
 
 from shapely import wkt
 
@@ -147,48 +141,72 @@ def get_unique_keys(db: Session, model, agency_id, key_column=None):
     return unique_keys
 
 ####
-
 async def get_route_details(db: AsyncSession, route_code: str, direction_id: int, day_type: str, p_time: str, num_results: int, cache_expiration: Optional[int] = None):
-	# Create a unique key for this query
 	logging.info(f"Executing query for route_code={route_code}, direction_id={direction_id}, day_type={day_type}, time={p_time}, num_results={num_results}")
 
 	key = f"get_route_details:{route_code}:{direction_id}:{day_type}:{p_time}:{num_results}"
 
-	# Create a new Redis connection for each function call
 	redis = aioredis.from_url(Config.REDIS_URL, socket_connect_timeout=5)
 
-	# Try to get the result from Redis
-	result = await redis.get(key)
-	if result is not None:
+	cached_result = await redis.get(key)
+	if cached_result is not None:
 		try:
-			data = pickle.loads(result)
+			cached_data = pickle.loads(cached_result)
 		except (pickle.UnpicklingError, AttributeError, EOFError, ImportError, IndexError) as e:
 			logging.error(f"Error unpickling data from Redis: {e}")
-			data = None
-		if data is not None:
-			return data
+			cached_data = None
+		if cached_data is not None:
+			return cached_data
 
-	p_time_obj = datetime.strptime(p_time, "%H:%M:%S").time()
 
-	# Then pass this time object to the query
-	# Query the database
-	query = text("SELECT * FROM metro_api.get_route_details(:p_route_code, :p_direction_id, :p_day_type, :p_input_time, :p_num_results)")
-	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type, 'p_input_time': p_time_obj, 'p_num_results': num_results})
+	query = text("SELECT * FROM metro_api.get_route_details_with_shape_ids(:p_route_code, :p_direction_id, :p_day_type, :p_input_time, :p_num_results)")
+	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type.value, 'p_input_time': p_time.strftime("%H:%M:%S"), 'p_num_results': num_results})
+	raw_data = result.fetchall()
+
+	stop_times = defaultdict(list)
+	shape_ids = set()
+	for row in raw_data:
+		stop_name, departure_times, shape_id = row
+		shape_ids.add(shape_id)
+		for time in departure_times:
+			if time not in stop_times[stop_name]:
+				stop_times[stop_name].append(time)
+		stop_times[stop_name].sort()
+
+	# Prepare the list of stop times and shape_ids
+	stop_times_list = [(stop_name, times, shape_id) for stop_name, times in stop_times.items()]
+
+	# Query the trip_shapes table for the geometries of the distinct shape_ids
+	query = text("SELECT shape_id, ST_AsGeoJSON(geometry) FROM metro_api.trip_shapes WHERE shape_id IN :shape_ids")
+	result = db.execute(query, {'shape_ids': tuple(shape_ids)})
 
 	# Fetch all rows from the result
-	data = result.fetchall()
+	geometries_result = result.fetchall()
 
-	# Cache the result in Redis with the specified expiration time
+	# Process the geometries
+	geometries = {shape_id: geometry for shape_id, geometry in geometries_result}
+
+	# Prepare the debugging information
+	debug_info = {
+		'queried_shape_ids': list(shape_ids),
+		'num_queried_shape_ids': len(shape_ids),
+		'num_returned_geometries': len(geometries_result),
+	}
+
+	# Prepare the final data
+	final_data = {
+		'stop_times': stop_times_list,
+		'geometries': geometries,
+		'debug_info': debug_info,
+	}
 	try:
-		await redis.set(key, pickle.dumps(data), ex=cache_expiration)
+		await redis.set(key, pickle.dumps(final_data), ex=cache_expiration)
 	except pickle.PicklingError as e:
 		logging.error(f"Error pickling data for Redis: {e}")
 
-	# Close the Redis connection
 	await redis.close()
 
-	return data
-
+	return final_data
 
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
