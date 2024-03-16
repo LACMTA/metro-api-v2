@@ -878,13 +878,10 @@ async def route_details_endpoint(
     num_results: int = Query(3, ge=1),
     db: AsyncSession = Depends(get_db)
 ):
-    """
-    Get route details by route_code, direction_id, day_type, and time.
-    e.g. 
-    /LACMTA/route_details/720?direction_id=1&day_type=weekday&time=12:00:00&num_results=3
-    """
     # Convert the time string to a datetime.time object
-    route_details = await crud.get_route_details(db, route_code, direction_id, day_type, time.time, num_results)
+    time_obj = datetime.strptime(time, "%H:%M:%S").time()
+
+    route_details = await crud.get_route_details(db, route_code, direction_id, day_type, time_obj, num_results)
 
     if not route_details:
         raise HTTPException(status_code=404, detail="Route details not found")

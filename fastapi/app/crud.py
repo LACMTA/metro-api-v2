@@ -158,11 +158,9 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 		if cached_data is not None:
 			return cached_data
 
-	p_time_obj = datetime.strptime(p_time, "%H:%M:%S").time()
 
 	query = text("SELECT * FROM metro_api.get_route_details_with_shape_ids(:p_route_code, :p_direction_id, :p_day_type, :p_input_time, :p_num_results)")
-	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type, 'p_input_time': p_time_obj, 'p_num_results': num_results})
-
+	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type.value, 'p_input_time': p_time.strftime("%H:%M:%S"), 'p_num_results': num_results})
 	raw_data = result.fetchall()
 
 	stop_times = defaultdict(list)
