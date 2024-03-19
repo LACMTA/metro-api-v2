@@ -23,11 +23,11 @@ def retry_on_failure(task, retries=5, delay=15):
             time.sleep(delay)
     raise Exception('Task failed after all retries')  # If all retries fail, raise an exception
 
-# @crython.job(second='*/15')
-# def gtfs_rt_scheduler():
-#     if not lock.locked():
-#         with lock:
-#             asyncio.run(retry_on_failure(gtfs_rt_helper.update_gtfs_realtime_data))
+@crython.job(second='*/15')
+def gtfs_rt_scheduler():
+    if not lock.locked():
+        with lock:
+            asyncio.run(retry_on_failure(gtfs_rt_helper.update_gtfs_realtime_data))
 
 @crython.job(expr='@daily')
 def go_pass_data_scheduler():
