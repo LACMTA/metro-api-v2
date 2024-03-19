@@ -9,7 +9,7 @@ import time
 # from ..gtfs_rt import *
 # from ..models import *
 
-import json
+import re
 import requests
 import pandas as pd
 import geopandas as gpd
@@ -136,11 +136,15 @@ async def update_gtfs_realtime_data():
     ]
 
     for endpoint in websocket_endpoints:
+        match = re.search(r'/ws/(.*?)/', endpoint)
+        if match:
+            agency = match.group(1)
         async with websockets.connect(endpoint) as websocket:
             feed = FeedMessage()
             response_data = await websocket.recv()
             if not response_data:
-                break
+                print(f"No response data from {endpoint}. Skipping this endpoint.")
+                continue
             feed.ParseFromString(response_data)
         
         trip_update_array = []
@@ -218,7 +222,9 @@ async def update_gtfs_realtime_data():
 
         vehicle_position_updates_gdf = gpd.GeoDataFrame(vehicle_position_updates, geometry=gpd.points_from_xy(vehicle_position_updates.position_longitude, vehicle_position_updates.position_latitude))
         combined_vehicle_position_dataframes.append(vehicle_position_updates_gdf)
-    # logging('vehicle_position_updates Data Frame: ' + str(vehicle_position_updates))
+    process_dataframes_and_update_db(combined_trip_update_dataframes, combined_stop_time_dataframes, combined_vehicle_position_dataframes)
+
+def process_dataframes_and_update_db(combined_trip_update_dataframes, combined_stop_time_dataframes, combined_vehicle_position_dataframes):
     combined_trip_update_df = pd.concat(combined_trip_update_dataframes)
     combined_stop_time_df = pd.concat(combined_stop_time_dataframes)
     combined_vehicle_position_df = gpd.GeoDataFrame(pd.concat(combined_vehicle_position_dataframes, ignore_index=True), geometry='geometry')
@@ -246,10 +252,9 @@ async def update_gtfs_realtime_data():
     del combined_stop_time_dataframes
     del combined_vehicle_position_dataframes
 
-
 if __name__ == "__main__":
-    process_start = timeit.default_timer()
-    # update_gtfs_realtime_data()
+    # process_start = timeit.default_timer()
+    update_gtfs_realtime_data()
     process_end = timeit.default_timer()
     session.close()
     print('Process took {} seconds'.format(process_end - process_start))

@@ -46,6 +46,9 @@ from starlette.responses import Response
 
 from enum import Enum
 
+from shapely import wkt
+from geojson import LineString
+
 # for OAuth2
 from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
 
@@ -524,7 +527,7 @@ from .utils.gtfs_rt_swiftly import connect_to_swiftly, SWIFTLY_API_REALTIME, SWI
 
 connected_clients = 0
 
-@app.router.get("/ws/{agency_id}/{endpoint}/{route_codes}")
+@app.router.get("/ws/{agency_id}/{endpoint}/{route_codes}" ,tags=["Real-Time data"])
 async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: Optional[str] = None):
     """
     Dummy HTTP endpoint for WebSocket documentation.
@@ -642,7 +645,8 @@ async def websocket_endpoint(websocket: WebSocket, agency_id: str, endpoint: str
     await psub.close()
     redis.close()
     await redis.wait_closed()
-@app.router.get("/ws/{agency_id}/{endpoint}/{route_codes}")
+
+@app.router.get("/ws/{agency_id}/{endpoint}/{route_codes}" ,tags=["Real-Time data"])
 async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: Optional[str] = None):
     """
     Dummy HTTP endpoint for WebSocket documentation.
@@ -812,61 +816,6 @@ async def populate_route_stops(agency_id: AgencyIdEnum,route_code:str, daytype: 
     result = crud.get_gtfs_route_stops(db,route_code,daytype.value,agency_id.value)
     json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
-
-@app.get("/{agency_id}/trip_departure_times/{route_code}/{direction_id}/{day_type}", tags=["Static data"])
-async def get_trip_departure_times(
-    agency_id: str, 
-    route_code: str, 
-    direction_id: int, 
-    day_type: str, 
-    current_time: Optional[str] = None,
-    async_db: AsyncSession = Depends(get_async_db)
-):
-    """
-    Get trip departure times data by route code, day type, direction id.
-    """
-    model = models.TripDepartureTimes
-    if route_code.lower() == 'all':
-        # Return all routes
-        result = await crud.get_all_data_async(async_db, model, agency_id)
-    elif route_code.lower() == 'list':
-        # Return a list of route codes
-        result = await crud.get_list_of_unique_values_async(async_db, model, 'route_code', agency_id)
-    else:
-        # Return data for a specific route code, and optionally day type and direction id
-        fields = {'route_code': route_code, 'direction_id': direction_id, 'day_type': day_type}
-        result = await crud.get_data_from_many_fields_async(async_db, model, agency_id, fields)
-
-        # Convert the current time string to a datetime.time object
-        current_time = current_time or datetime.now().strftime("%H:%M:%S")
-        current_time_obj = datetime.strptime(current_time, "%H:%M:%S").time()
-
-        # Group the results by shape_id and filter based on current_time
-        # Group the results by shape_id and filter based on current_time
-        shapes = defaultdict(set)
-        for record in result:
-            start_time = record['start_time']
-            end_time = record['end_time']
-
-            # Check if the trip goes into the next day
-            if start_time > end_time:
-                # The trip goes into the next day
-                if current_time_obj >= start_time or current_time_obj <= end_time:
-                    shapes[record['shape_id']].update(record['stops'])
-            else:
-                # The trip does not go into the next day
-                if start_time <= current_time_obj <= end_time:
-                    shapes[record['shape_id']].update(record['stops'])
-
-        # Convert defaultdict to dict and assign it to result
-        # Also convert sets to lists
-        result = {shape_id: list(stops) for shape_id, stops in shapes.items()}
-
-    if result is None:
-        raise HTTPException(status_code=404, detail=f"Data not found for route code {route_code}, day type {day_type}, and direction id {direction_id}")
-    return result
-from shapely import wkt
-from geojson import LineString
 
 @app.get("/{agency_id}/route_details/{route_code}", tags=["Static data"])
 async def route_details_endpoint(
@@ -1083,7 +1032,7 @@ async def get_gopass_schools(db: AsyncSession = Depends(get_async_db), show_miss
         json_compatible_item_data = jsonable_encoder(result)
     return JSONResponse(content=json_compatible_item_data)
 
-@app.get("/time")
+@app.get("/time", tags=["User Methods"])
 async def get_time():
     current_time = datetime.now()
     return {current_time}
@@ -1092,7 +1041,7 @@ async def get_time():
 # async def root():
 
 
-@app.get("/",response_class=HTMLResponse)
+@app.get("/",response_class=HTMLResponse, tags=["User Methods"])
 def index(request:Request):
     # return templates.TemplateResponse("index.html",context={"request":request})
     human_readable_default_update = None
@@ -1165,7 +1114,7 @@ def read_user(username: str, db: Session = Depends(get_db),token: str = Depends(
     return db_user
 
 
-@app.get("/routes", response_model=List[str])
+@app.get("/routes", response_model=List[str], tags=["Static Data"])
 async def get_all_routes():
     return [route.path for route in app.routes]
 
