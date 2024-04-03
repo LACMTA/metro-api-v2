@@ -158,6 +158,8 @@ class RouteStops(Base):
     # latitude = Column(Float)
     # longitude = Column(Float)
     agency_id = Column(String)
+    def to_dict(self):
+        return {c.key: getattr(self, c.key) for c in inspect(self).mapper.column_attrs}
 
 class TripShapeStopTimes(BaseModel):
     __tablename__ = "trip_shape_stop_times"
@@ -188,6 +190,8 @@ class TripShapes(Base):
     shape_id = Column(String, primary_key=True, index=True)
     geometry = Column(Geometry('LINESTRING', srid=4326))
     agency_id = Column(String)
+    def to_dict(self):
+        return {c.key: getattr(self, c.key) for c in inspect(self).mapper.column_attrs}
 
 class Shapes(Base):
     __tablename__ = "shapes"
@@ -198,7 +202,8 @@ class Shapes(Base):
     geometry = Column(Geometry('POINT', srid=4326))
     shape_pt_sequence = Column(Integer)
     agency_id = Column(String)
-    
+    def to_dict(self):
+        return {c.key: getattr(self, c.key) for c in inspect(self).mapper.column_attrs}    
 
 class Trips(Base):
     __tablename__ = "trips"
@@ -211,6 +216,8 @@ class Trips(Base):
     shape_id = Column(String)
     trip_id_event = Column(String)
     agency_id = Column(String)
+    def to_dict(self):
+        return {c.key: getattr(self, c.key) for c in inspect(self).mapper.column_attrs}
 
 class TripShapeStops(Base):
     __tablename__ = "trip_shape_stops"
