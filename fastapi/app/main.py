@@ -869,11 +869,11 @@ async def get_shape_info(
         result = await crud.get_stop_times_by_trip_id_and_time_range_async(async_db, models.StopTimes, single_trip, agency_id, num_results)  # Update this line
         stop_times_grouped = result["stop_times"]
         num_results = result["debug_info"]["results"]  # Add this line
-        for stop_id_cleaned, stop_times in stop_times_grouped.items():
-            # Group the stop times by stop_id_cleaned
-            if stop_id_cleaned not in full_stops:
-                full_stops[stop_id_cleaned] = []
-            full_stops[stop_id_cleaned].extend(stop_times)
+        for stop_id_clean, stop_times in stop_times_grouped.items():
+            # Group the stop times by stop_id_clean
+            if stop_id_clean not in full_stops:
+                full_stops[stop_id_clean] = []
+            full_stops[stop_id_clean].extend(stop_times)
             # Order the stop times by stop_sequence
             debug_array.append(stop_times)  # Add this line
         # Check if stop_times is a string (which means no stop times were found)
@@ -1006,6 +1006,20 @@ async def get_agency(agency_id: AgencyIdEnum, db: Session = Depends(get_db)):
     result = crud.get_agency_data(db,models.Agency,agency_id.value)
     return result
 
+# New static endpoint to return destination (stop_headsign) based on trip_id and stop_id
+@app.get("/{agency_id}/destination/{trip_id}/{stop_id}",tags=["Static data"])
+async def get_destination_by_trip_stop(agency_id: AgencyIdEnum, trip_id:str, stop_id:str, async_session: Session = Depends(get_async_db)):  
+    resultData = await crud.get_data_from_many_fields_async(async_session, models.StopTimes, agency_id.value, {'trip_id': trip_id, 'stop_id_clean': stop_id}, cache_expiration=300)
+    
+    result = await get_destination_code(resultData[0])
+    return result
+
+async def get_destination_code(stop_time):
+    returnValue = {
+        'destination_code': stop_time['destination_code']
+    }
+    return returnValue
+
 #### END GTFS Static data endpoints ####
 #### END Static data endpoints ####
 
@@ -1104,7 +1118,7 @@ def read_user(username: str, db: Session = Depends(get_db),token: str = Depends(
     return db_user
 
 
-@app.get("/routes", response_model=List[str], tags=["Static Data"])
+@app.get("/routes", response_model=List[str], tags=["Static data"])
 async def get_all_routes():
     return [route.path for route in app.routes]
 
