@@ -819,7 +819,7 @@ async def get_stop_times_by_trip_id_and_time_range_async(
     # Create the query
     stmt = (
         select(model)
-        .join(models.Stops, models.Stops.stop_id == model.stop_id_cleaned)
+        .join(models.Stops, models.Stops.stop_id == model.stop_id_clean)
         .where(and_(*[cond[1] for cond in conditions]))
         .order_by(model.stop_sequence)  # Order by stop_sequence
     )
@@ -833,7 +833,7 @@ async def get_stop_times_by_trip_id_and_time_range_async(
     stop_times_grouped = {}
     for stop_time in stop_times:
         # Get the stop_name from the Stops model
-        stop = await async_session.execute(select(models.Stops).where(models.Stops.stop_id == stop_time.stop_id_cleaned))
+        stop = await async_session.execute(select(models.Stops).where(models.Stops.stop_id == stop_time.stop_id_clean))
         stop = stop.scalars().first()
         stop_name = stop.stop_name if stop else "Unknown"
         if stop_name not in stop_times_grouped:
