@@ -66,7 +66,7 @@ class StopTimes(BaseModel):
     departure_time_clean = Column(Time)
     is_next_day = Column(Boolean)
     stop_id = Column(Integer, index=True)
-    stop_id_cleaned = Column(String)
+    stop_id_clean = Column(String)
     stop_sequence = Column(Integer,primary_key=True, index=True)
     stop_headsign = Column(String)
     pickup_type = Column(Integer)
