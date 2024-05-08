@@ -903,20 +903,24 @@ async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     calendar_dates = jsonable_encoder(result)
     return JSONResponse(content={"calendar_dates":calendar_dates})
 
-@app.get("/{agency_id}/stop_times/route_code/{route_code}",tags=["Static data"],response_model=Page[schemas.StopTimes])
-async def get_stop_times_by_route_code_and_agency(agency_id: AgencyIdEnum,route_code, db: Session = Depends(get_db)):
-    result = crud.get_stop_times_by_route_code(db,route_code,agency_id.value)
+@app.get("/{agency_id}/stop_times/route_code/{route_code}",tags=["Static data"])
+async def get_stop_times_by_route_code_and_agency(agency_id: AgencyIdEnum, route_code, async_db: AsyncSession = Depends(get_async_db)):
+    result = await crud.get_data_async(async_db, models.StopTimes, agency_id.value, 'route_code', route_code)
     return result
 
-
-@app.get("/{agency_id}/stop_times/trip_id/{trip_id}",tags=["Static data"],response_model=Page[schemas.StopTimes])
-async def get_stop_times_by_trip_id_and_agency(agency_id: AgencyIdEnum,trip_id, db: Session = Depends(get_db)):
-    result = crud.get_stop_times_by_trip_id(db,trip_id,agency_id.value)
+@app.get("/{agency_id}/stop_times/trip_id/{trip_id}",tags=["Static data"])
+async def get_stop_times_by_trip_id_and_agency(agency_id: AgencyIdEnum,trip_id, async_db: AsyncSession = Depends(get_async_db)):
+    if trip_id == 'list':
+        result = await crud.get_list_of_unique_values_async(async_db, models.StopTimes, agency_id.value, 'trip_id')
+    elif trip_id == 'all':
+        result = await crud.get_all_data_async(async_db, models.StopTimes, agency_id.value)
+    else:
+        result = await crud.get_data_async(async_db, models.StopTimes, agency_id.value, 'trip_id', trip_id)
     return result
 
 @app.get("/{agency_id}/stops/{stop_id}",tags=["Static data"])
-async def get_stops(agency_id: AgencyIdEnum,stop_id, db: Session = Depends(get_db)):
-    result = crud.get_stops_id(db,stop_id,agency_id.value)
+async def get_stops(agency_id: AgencyIdEnum, stop_id, db: AsyncSession = Depends(get_async_db)):
+    result = await crud.get_stops_id(db, stop_id, agency_id.value)
     return result
 
 @app.get("/{agency_id}/trips/{trip_id}",tags=["Static data"])
