@@ -163,18 +163,17 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type.value, 'p_input_time': p_time.strftime("%H:%M:%S"), 'p_num_results': num_results})
 	raw_data = result.fetchall()
 
-	stop_times = defaultdict(list)
+	stop_times = []
 	shape_ids = set()
 	for row in raw_data:
 		stop_name, departure_times, shape_id = row
 		shape_ids.add(shape_id)
+		times = []
 		for time in departure_times:
-			if time not in stop_times[stop_name]:
-				stop_times[stop_name].append(time)
-		stop_times[stop_name].sort()
-
-	# Prepare the list of stop times and shape_ids
-	stop_times_list = [(stop_name, times, shape_id) for stop_name, times in stop_times.items()]
+			if time not in times:
+				times.append(time)
+		times.sort()
+		stop_times.append([stop_name, {'times': times, 'shape_id': shape_id}])
 
 	# Query the trip_shapes table for the geometries of the distinct shape_ids
 	query = text("SELECT shape_id, ST_AsGeoJSON(geometry) FROM metro_api.trip_shapes WHERE shape_id IN :shape_ids")
@@ -195,7 +194,7 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 
 	# Prepare the final data
 	final_data = {
-		'stop_times': stop_times_list,
+		'stop_times': stop_times,
 		'geometries': geometries,
 		'debug_info': debug_info,
 	}
@@ -629,37 +628,33 @@ def get_gtfs_rt_trips_by_trip_id(db, trip_id: str,agency_id: str):
     return result
 
     
-
-def get_stops_id(db, stop_code: str,agency_id: str):
+async def get_stops_id(db, stop_code: str, agency_id: str):
     result = []
     if stop_code == 'list':
-        the_query = db.query(models.Stops).filter(models.Stops.agency_id == agency_id).all()
-        for row in the_query:
-            result.append(row.stop_code)
+        data = await get_all_data_async(db, models.Stops, agency_id)
+        for item in data:
+            result.append(item['stop_code'])
         return result
     elif stop_code == 'all':
-        the_query = db.query(models.Stops).filter(models.Stops.agency_id == agency_id).all()
-        for row in the_query:
+        data = await get_all_data_async(db, models.Stops, agency_id)
+        for item in data:
             this_object = {}
             this_object['type'] = 'Feature' 
-            this_object['geometry']= JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
-            del row.geometry
-            this_object['properties'] = row
+            this_object['geometry']= item['geometry']
+            del item['geometry']
+            this_object['properties'] = item
             result.append(this_object)
         return result
     else:
-        the_query = db.query(models.Stops).filter(models.Stops.stop_code == stop_code,models.Stops.agency_id == agency_id).all()
-        for row in the_query:
+        data = await get_data_async(db, models.Stops, agency_id, 'stop_code', stop_code)
+        for item in data:
             this_object = {}
             this_object['type'] = 'Feature' 
-            this_object['geometry']= JsonReturn(geo.mapping(shape.to_shape((row.geometry))))
-            del row.geometry
-            this_object['properties'] = row
+            this_object['geometry']= item['geometry']
+            del item['geometry']
+            this_object['properties'] = item
             result.append(this_object)
     return result
-    # user_dict = models.User[username]
-    # return schemas.UserInDB(**user_dict)
-
 
 
 ##### trip_shapes_info_endpoint handling start #####
