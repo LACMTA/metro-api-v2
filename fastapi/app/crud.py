@@ -166,16 +166,15 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 	stop_times = []
 	shape_ids = set()
 	for row in raw_data:
-		stop_name, departure_times, shape_id = row
+		stop_name, arrival_times, shape_id, stop_id = row
 		shape_ids.add(shape_id)
 		times = []
-		for time in departure_times:
+		for time in arrival_times:
 			if time not in times:
 				times.append(time)
 		times.sort()
-		stop_times.append([stop_name, {'times': times, 'shape_id': shape_id}])
-
-	# Query the trip_shapes table for the geometries of the distinct shape_ids
+	stop_times.append([stop_name, {'stop_id': stop_id, 'times': times, 'shape_id': shape_id}])
+    # Query the trip_shapes table for the geometries of the distinct shape_ids
 	query = text("SELECT shape_id, ST_AsGeoJSON(geometry) FROM metro_api.trip_shapes WHERE shape_id IN :shape_ids")
 	result = db.execute(query, {'shape_ids': tuple(shape_ids)})
 
@@ -814,7 +813,7 @@ async def get_stop_times_by_trip_id_and_time_range_async(
     # Create the query
     stmt = (
         select(model)
-        .join(models.Stops, models.Stops.stop_id == model.stop_id_clean)
+        .join(models.Stops, models.Stops.stop_id == model.stop_id)
         .where(and_(*[cond[1] for cond in conditions]))
         .order_by(model.stop_sequence)  # Order by stop_sequence
     )
@@ -834,8 +833,8 @@ async def get_stop_times_by_trip_id_and_time_range_async(
         if stop_name not in stop_times_grouped:
             stop_times_grouped[stop_name] = {"arrival_times": [], "departure_times": []}
         if len(stop_times_grouped[stop_name]["departure_times"]) < num_results:
-            stop_times_grouped[stop_name]["arrival_times"].append(str(stop_time.arrival_time_clean))
-            stop_times_grouped[stop_name]["departure_times"].append(str(stop_time.departure_time_clean))
+            stop_times_grouped[stop_name]["arrival_times"].append(str(stop_time.arrival_time))
+            stop_times_grouped[stop_name]["departure_times"].append(str(stop_time.departure_time))
 
     return {"debug_info": debug_info, "stop_times": stop_times_grouped, "full_stops": stop_times_grouped}
 
