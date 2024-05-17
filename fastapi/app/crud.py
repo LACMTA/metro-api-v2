@@ -166,16 +166,15 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 	stop_times = []
 	shape_ids = set()
 	for row in raw_data:
-		stop_name, departure_times, shape_id = row
+		stop_name, arrival_times, shape_id, stop_id = row
 		shape_ids.add(shape_id)
 		times = []
-		for time in departure_times:
+		for time in arrival_times:
 			if time not in times:
 				times.append(time)
 		times.sort()
-		stop_times.append([stop_name, {'times': times, 'shape_id': shape_id}])
-
-	# Query the trip_shapes table for the geometries of the distinct shape_ids
+	stop_times.append([stop_name, {'stop_id': stop_id, 'times': times, 'shape_id': shape_id}])
+    # Query the trip_shapes table for the geometries of the distinct shape_ids
 	query = text("SELECT shape_id, ST_AsGeoJSON(geometry) FROM metro_api.trip_shapes WHERE shape_id IN :shape_ids")
 	result = db.execute(query, {'shape_ids': tuple(shape_ids)})
 
