@@ -17,6 +17,8 @@ import time
 
 from datetime import timedelta, date, datetime,time
 
+from typing import List
+
 
 from fastapi import FastAPI, Request, Response, Depends, HTTPException, status, Query, WebSocket, WebSocketDisconnect
 from fastapi import Path as FastAPIPath
@@ -903,7 +905,7 @@ async def get_calendar_dates_from_db(db: Session = Depends(get_db)):
     calendar_dates = jsonable_encoder(result)
     return JSONResponse(content={"calendar_dates":calendar_dates})
 
-@app.get("/{agency_id}/stop_times/route_code/{route_code}",tags=["Static data"])
+@app.get("/{agency_id}/stop_times/route_code/{route_code}",response_model=List[schemas.StopTimesResponse],tags=["Static data"])
 async def get_stop_times_by_route_code_and_agency(agency_id: AgencyIdEnum, route_code, async_db: AsyncSession = Depends(get_async_db)):
     result = await crud.get_data_async(async_db, models.StopTimes, agency_id.value, 'route_code', route_code)
     return result
