@@ -814,7 +814,7 @@ async def get_stop_times_by_trip_id_and_time_range_async(
     # Create the query
     stmt = (
         select(model)
-        .join(models.Stops, models.Stops.stop_id == model.stop_id_clean)
+        .join(models.Stops, models.Stops.stop_id == model.stop_id)
         .where(and_(*[cond[1] for cond in conditions]))
         .order_by(model.stop_sequence)  # Order by stop_sequence
     )
@@ -834,8 +834,8 @@ async def get_stop_times_by_trip_id_and_time_range_async(
         if stop_name not in stop_times_grouped:
             stop_times_grouped[stop_name] = {"arrival_times": [], "departure_times": []}
         if len(stop_times_grouped[stop_name]["departure_times"]) < num_results:
-            stop_times_grouped[stop_name]["arrival_times"].append(str(stop_time.arrival_time_clean))
-            stop_times_grouped[stop_name]["departure_times"].append(str(stop_time.departure_time_clean))
+            stop_times_grouped[stop_name]["arrival_times"].append(str(stop_time.arrival_time))
+            stop_times_grouped[stop_name]["departure_times"].append(str(stop_time.departure_time))
 
     return {"debug_info": debug_info, "stop_times": stop_times_grouped, "full_stops": stop_times_grouped}
 

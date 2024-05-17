@@ -2,7 +2,7 @@ from typing import Optional,get_type_hints, Type
 from pydantic import BaseModel, Json, ValidationError,validator
 
 from .config import Config
-
+from datetime import time
 from enum import Enum
 
 def create_model_fields_enum(model: Type[BaseModel]) -> Type[Enum]:
@@ -54,10 +54,31 @@ class CanceledServiceData(BaseModel):
     trip_direction: str
     agency_id: str
 
+class StopTimesResponse(BaseModel):
+    arrival_time: str
+    # arrival_time_clean: str
+    # is_next_day: bool
+    stop_id: int
+    # stop_id_clean: str
+    stop_sequence: int
+    stop_headsign: str
+    pickup_type: int
+    drop_off_type: int
+    trip_id_event: str
+    route_code: str
+    destination_code: str
+    timepoint: int
+    bay_num: Optional[int]
+    agency_id: str
+    trip_id: str
+    rider_usage_code: int
+
 class StopTimes(BaseModel):
     trip_id: str
     arrival_time: str
     departure_time: str
+    arrival_time_clean: time
+    departure_time_clean: time
     stop_id: int
     stop_sequence: int
     stop_headsign: str
@@ -67,7 +88,7 @@ class StopTimes(BaseModel):
     route_code: str
     destination_code: str
     timepoint: int
-    bay_num: int
+    bay_num: Optional[int]
     agency_id: str
     rider_usage_code: int
 
