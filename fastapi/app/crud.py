@@ -163,20 +163,26 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type.value, 'p_input_time': p_time.strftime("%H:%M:%S"), 'p_num_results': num_results})
 	raw_data = result.fetchall()
 
-	stop_times = defaultdict(list)
+	stop_times = []
 	shape_ids = set()
 	for row in raw_data:
 		stop_name, departure_times, shape_id = row
 		shape_ids.add(shape_id)
+		stop_info = next((item for item in stop_times if item[0] == stop_name), None)
+		if stop_info is None:
+			stop_info = [stop_name, {'times': [], 'shape_ids': []}]
+			stop_times.append(stop_info)
 		for time in departure_times:
-			if time not in stop_times[stop_name]:
-				stop_times[stop_name].append(time)
-		stop_times[stop_name].sort()
+			if time not in stop_info[1]['times']:
+				stop_info[1]['times'].append(time)
+			if shape_id not in stop_info[1]['shape_ids']:
+				stop_info[1]['shape_ids'].append(shape_id)
+		stop_info[1]['times'].sort()
 
-	# Prepare the list of stop times and shape_ids
-	stop_times_list = [(stop_name, times, shape_id) for stop_name, times in stop_times.items()]
+	# Extract shape_ids from stop_times
+	shape_ids = {shape_id for stop in stop_times for shape_id in stop[1]['shape_ids']}
 
-	# Query the trip_shapes table for the geometries of the distinct shape_ids
+
 	query = text("SELECT shape_id, ST_AsGeoJSON(geometry) FROM metro_api.trip_shapes WHERE shape_id IN :shape_ids")
 	result = db.execute(query, {'shape_ids': tuple(shape_ids)})
 
@@ -184,7 +190,7 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 	geometries_result = result.fetchall()
 
 	# Process the geometries
-	geometries = {shape_id: geometry for shape_id, geometry in geometries_result}
+	geometries = {shape_id: json.loads(geometry) for shape_id, geometry in geometries_result}
 
 	# Prepare the debugging information
 	debug_info = {
@@ -195,7 +201,7 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 
 	# Prepare the final data
 	final_data = {
-		'stop_times': stop_times_list,
+		'stop_times': stop_times,
 		'geometries': geometries,
 		'debug_info': debug_info,
 	}
@@ -280,6 +286,7 @@ async def get_route_details_dev(db: AsyncSession, route_code: str, direction_id:
 	await redis.close()
 
 	return final_data
+
 
 async def get_data_async(async_session: Session, model: Type[DeclarativeMeta], agency_id: str, field_name: Optional[str] = None, field_value: Optional[str] = None, cache_expiration: int = None):
     # Create a unique key for this query
