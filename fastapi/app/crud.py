@@ -163,22 +163,23 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 	result = db.execute(query, {'p_route_code': route_code, 'p_direction_id': direction_id, 'p_day_type': day_type.value, 'p_input_time': p_time.strftime("%H:%M:%S"), 'p_num_results': num_results})
 	raw_data = result.fetchall()
 
-	stop_times = defaultdict(dict)
+	stop_times = {}
 	shape_ids = set()
 	for row in raw_data:
 		stop_name, departure_times, shape_id = row
 		shape_ids.add(shape_id)
-		if 'times' not in stop_times[stop_name]:
-			stop_times[stop_name]['times'] = []
+		if stop_name not in stop_times:
+			stop_times[stop_name] = {'times': [], 'shape_ids': []}
 		for time in departure_times:
 			if time not in stop_times[stop_name]['times']:
 				stop_times[stop_name]['times'].append(time)
+			if shape_id not in stop_times[stop_name]['shape_ids']:
+				stop_times[stop_name]['shape_ids'].append(shape_id)
 		stop_times[stop_name]['times'].sort()
-		stop_times[stop_name]['shape_id'] = shape_id
 
-	# Prepare the list of stop times and shape_ids
-	stop_times_list = [(stop_name, times, shape_id) for stop_name, times in stop_times.items()]
-    # Query the trip_shapes table for the geometries of the distinct shape_ids
+	# Extract shape_ids from stop_times
+	shape_ids = {shape_id for stop in stop_times.values() for shape_id in stop['shape_ids']}
+
 	query = text("SELECT shape_id, ST_AsGeoJSON(geometry) FROM metro_api.trip_shapes WHERE shape_id IN :shape_ids")
 	result = db.execute(query, {'shape_ids': tuple(shape_ids)})
 
