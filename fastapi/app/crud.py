@@ -182,6 +182,7 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 	# Extract shape_ids from stop_times
 	shape_ids = {shape_id for stop in stop_times for shape_id in stop[1]['shape_ids']}
 
+
 	query = text("SELECT shape_id, ST_AsGeoJSON(geometry) FROM metro_api.trip_shapes WHERE shape_id IN :shape_ids")
 	result = db.execute(query, {'shape_ids': tuple(shape_ids)})
 
@@ -189,7 +190,7 @@ async def get_route_details(db: AsyncSession, route_code: str, direction_id: int
 	geometries_result = result.fetchall()
 
 	# Process the geometries
-	geometries = {shape_id: geometry for shape_id, geometry in geometries_result}
+	geometries = {shape_id: json.loads(geometry) for shape_id, geometry in geometries_result}
 
 	# Prepare the debugging information
 	debug_info = {
