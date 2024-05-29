@@ -978,10 +978,26 @@ async def get_route_overview(agency_id: AllAgencyIdEnum, async_db: AsyncSession 
         for agency in AllAgencyIdEnum:
             result = await crud.get_all_data_async(async_db, model, agency.value)
             if result is not None:
-                results.append(result)
+                results.extend(result)
         if not results:
             raise HTTPException(status_code=404, detail="Data not found")
-        return results
+
+        # Group results by route_type
+        grouped_results = {}
+        for result in results:
+            route_type = result.get('route_type')
+            if route_type not in grouped_results:
+                grouped_results[route_type] = []
+            grouped_results[route_type].append(result)
+
+        # Sort routes by display_order within each route_type
+        for route_type, routes in grouped_results.items():
+            grouped_results[route_type] = sorted(routes, key=lambda x: x.get('display_order', 0))
+
+        # Convert grouped_results to list of dictionaries
+        final_results = [{'route_type': k, 'routes': v} for k, v in grouped_results.items()]
+
+        return final_results
     else:
         result = await crud.get_all_data_async(async_db, model, agency_id.value)
         if result is None:
