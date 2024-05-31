@@ -27,7 +27,7 @@ class BaseModel(Base):
             return data.to_dict()
         return data
 
-class Agency(Base):
+class Agency(BaseModel):
     __tablename__ = "agency"
     agency_id = Column(String, primary_key=True, index=True)
     agency_name = Column(String)
@@ -36,7 +36,7 @@ class Agency(Base):
     agency_lang = Column(String)
     agency_phone = Column(String)
 
-class Calendar(Base):
+class Calendar(BaseModel):
     __tablename__ = "calendar"
     service_id = Column(String, primary_key=True, index=True)
     monday = Column(Integer)
@@ -50,7 +50,7 @@ class Calendar(Base):
     end_date = Column(Integer)
     agency_id = Column(String)
 
-class CalendarDates(Base):
+class CalendarDates(BaseModel):
     __tablename__ = "calendar_dates"
     service_id = Column(String, primary_key=True, index=True)
     agency_id = Column(String)
@@ -80,7 +80,7 @@ class StopTimes(BaseModel):
     trip_id = Column(String, primary_key=True,index=True)
     rider_usage_code = Column(Integer)
 
-class Stops(Base):
+class Stops(BaseModel):
     __tablename__ = "stops"
     stop_id = Column(Integer, primary_key=True, index=True)
     stop_code = Column(Integer)
@@ -96,7 +96,7 @@ class Stops(Base):
     agency_id = Column(String)
 
 
-class Routes(Base):
+class Routes(BaseModel):
     __tablename__ = "routes"
     route_id = Column(String, primary_key=True, index=True)
     route_short_name = Column(String) 
