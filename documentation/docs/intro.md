@@ -1,45 +1,87 @@
----
-sidebar_position: 1
----
+# Welcome to the Los Angeles Metro User Guide
 
-# Tutorial Intro
+This guide provides an overview of the Los Angeles Metro API, including key features, common tasks, and troubleshooting tips. The developer side of this documentation is geared towards developers of the Los Angeles Metro API.
 
-Let's discover **the Metro API in less than 5 minutes** by creating a webpage.
+## Overview
 
-## Getting Started
+The Metro API provides access for developers to retrieve real-time data, GTFS data, and other information related to the Los Angeles Metro system. By leveraging this API, you can access detailed information about routes, stops, schedules, and live transit updates.
 
-Get started by **creating a new site**.
+- **Real-Time Data:** Access up-to-the-minute information on bus and train schedules, including delays and cancellations.
+- **GTFS Data:** Explore detailed information about routes, stops, and schedules.
+- **Canceled Service Data:** Stay informed about any service disruptions or cancellations that might affect your journey.
+- **Static Data:** Explore detailed information about routes, stops, and schedules to plan your trip effectively.
+- **Other Data:** Access additional resources like Gopass Schools information.
 
-### What you'll need
+## How to Use Key Features
 
-- [Node.js](https://nodejs.org/en/download/) version 16.14 or above:
-  - When installing Node.js, you are recommended to check all checkboxes related to dependencies.
+### Accessing Real-Time Data
 
-## Generate a new site
+To receive real-time updates about vehicles and trips, connect to our WebSocket endpoint. This endpoint is a pass-through for the Swiftly API, providing updates on vehicle positions or trip updates.
 
-Generate a new Docusaurus site using the **classic template**.
+#### How It Works:
 
-The classic template will automatically be added to your project after you run the command:
+1. **Connect to the WebSocket:** Use the endpoint format above to establish a WebSocket connection.
+2. **Receive Updates:** Once connected, you will receive real-time updates every 3 seconds. Updates include information about vehicle positions or trip updates, depending on the `endpoint` parameter specified.
+3. **Data Format:** Updates are sent in JSON format, including details such as `vehicle_id`, `route_code`, and trip information.
+4. **Error Handling:** If an error occurs while processing updates, an error message will be sent in the format `"Error: error_message"`.
 
-```bash
-npm init docusaurus@latest my-website classic
+#### Example Update Format:
+
+```json
+{
+    "id": "vehicle_id",
+    "vehicle": {
+        "trip": {
+            "route_id": "route_code",
+            ...
+        },
+        ...
+    },
+    "route_code": "route_code",
+    ...
+}
 ```
+### Accessing GTFS Data
 
-You can type this command into Command Prompt, Powershell, Terminal, or any other integrated terminal of your code editor.
+- **Get All Agencies:** Use the `/agencies` endpoint to view a list of all available agencies.
+- **Get Agency Routes:** Access `/routes/{agency_id}` to view all routes for a specific agency.
+- **Get Route Stops:** Use `/stops/{agency_id}/{route_code}` to view all stops for a specific route.
+- **Get Stop Times:** Access `/stop_times/{agency_id}/{route_code}` to view stop times for a specific route.
+- **Get Trips:** Use `/trips/{agency_id}/{trip_id}` to view details about a specific trip.
+- **Get All Trips:** Access `/trips/{agency_id}` to view all trips for a specific agency.
+- **Get All Routes:** Use `/routes/{agency_id}` to view all routes for a specific agency.
+- **Get All Stops:** Access `/stops/{agency_id}` to view all stops for a specific agency.
+- **Get All Stop Times:** Use `/stop_times/{agency_id}` to view all stop times for a specific agency.
 
-The command also installs all necessary dependencies you need to run Docusaurus.
 
-## Start your site
+### Checking Canceled Service Data
 
-Run the development server:
+- **Get Canceled Trip Summary:** Use `/canceled_service_summary` to view a summary of all canceled trips.
+- **Get Canceled Trip:** To find details about canceled trips for a specific line, use `/canceled_service/line/{line}`.
+- **View All Canceled Trips:** Access `/canceled_service/all` to see all canceled trips.
 
-```bash
-cd my-website
-npm run start
-```
+### Exploring Static Data
 
-The `cd` command changes the directory you're working with. In order to work with your newly created Docusaurus site, you'll need to navigate the terminal there.
+- **Route and Stop Information:** Use endpoints like `/{agency_id}/route_stops/{route_code}` and `/{agency_id}/stops/{stop_id}` to get information about routes and stops.
+- **Schedule and Trip Details:** Access detailed schedule information with endpoints such as `/{agency_id}/stop_times/route_code/{route_code}` and `/{agency_id}/trips/{trip_id}`.
+- **Route Overview:** Get an overview of routes with `/{agency_id}/route_overview` or detailed information for a specific route with `/{agency_id}/route_overview/{route_code}`.
 
-The `npm run start` command builds your website locally and serves it through a development server, ready for you to view at http://localhost:3000/.
+## Examples of Common Tasks
 
-Open `docs/intro.md` (this page) and edit some lines: the site **reloads automatically** and displays your changes.
+- **How to Check for Service Alerts:** Use the canceled service data endpoints to check for any disruptions or cancellations.
+- **How to Find Real-Time Schedule Information:** Utilize the real-time data endpoints to get the latest schedule updates for your route.
+
+## Troubleshooting Tips
+
+- **Issue: The schedule seems outdated.** Solution: Ensure you're accessing the real-time data endpoints for the most current information.
+- **Issue: Can't find my route.** Solution: Double-check the route code or use the `/{agency_id}/routes` endpoint to search for all available routes.
+
+## Support and Contact Information
+
+For further assistance or to provide feedback, please contact our customer support team:
+
+- **Email:** support@lametro.com
+- **Phone:** 1-800-LA-METRO
+- **Live Chat:** Available on our web application during business hours.
+
+We're here to help make your Los Angeles Metro experience as smooth and enjoyable as possible. Start exploring today and take the hassle out of public transit!
