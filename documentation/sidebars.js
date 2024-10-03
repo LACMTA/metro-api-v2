@@ -20,6 +20,16 @@ const sidebars = {
       id: 'intro', // document ID
       label: 'Getting started', // sidebar label
     },
+    {
+      type: 'doc',
+      id: 'docs',
+      label: 'Documentation Site'
+    },
+    {
+      type: 'doc',
+      id: 'websockets',
+      label: 'WebSockets'
+    }
   ],
   openApiSidebar: [
     {

@@ -88,7 +88,7 @@ sudo apt install python3 python3-pip
 
 ### Set Environment Variables
 
-Get the `secrets.py` files with the necessary credentials and add them to the `\fastapi\app\` and `\data-loading-service\app\` folders.
+Get the `app_secrets.py` files with the necessary credentials and add them to the `\fastapi\app\` and `\data-loading-service\app\` folders.
 
 Make sure they are targeted by the `.gitignore` and grayed out, indicating that they will not be tracked or committed to the repository.
 
@@ -232,3 +232,6 @@ docker build . -t metro-api-v2:metro-api-v2 .
 # runs metro-api-v2 image
 docker run --rm -it  -p 80:80/tcp metro-api-v2:metro-api-v2
 ```
+
+### Error connection to server at "localhost"
+

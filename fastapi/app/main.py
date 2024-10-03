@@ -536,9 +536,12 @@ async def dummy_websocket_endpoint(agency_id: str, endpoint: str, route_codes: O
     This endpoint is used for documentation purposes only. It mirrors the WebSocket endpoint that accepts connections and sends real-time updates about vehicles and trips.
 
     Args:
-        agency_id (str): The ID of the agency.
-        endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
-        route_codes (str, optional): A comma-separated list of route codes to filter updates. If not provided, updates for all routes are sent.
+
+    agency_id (str): The ID of the agency.
+    
+    endpoint (str): The type of updates to send. Can be "vehicle_positions" or "trip_updates".
+    
+    route_codes (str, optional): A comma-separated list of route codes to filter updates. If not provided, updates for all routes are sent.
 
     The WebSocket endpoint sends updates in the following format:
 

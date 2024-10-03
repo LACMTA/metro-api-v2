@@ -75,13 +75,3 @@ To receive real-time updates about vehicles and trips, connect to our WebSocket 
 
 - **Issue: The schedule seems outdated.** Solution: Ensure you're accessing the real-time data endpoints for the most current information.
 - **Issue: Can't find my route.** Solution: Double-check the route code or use the `/{agency_id}/routes` endpoint to search for all available routes.
-
-## Support and Contact Information
-
-For further assistance or to provide feedback, please contact our customer support team:
-
-- **Email:** support@lametro.com
-- **Phone:** 1-800-LA-METRO
-- **Live Chat:** Available on our web application during business hours.
-
-We're here to help make your Los Angeles Metro experience as smooth and enjoyable as possible. Start exploring today and take the hassle out of public transit!
