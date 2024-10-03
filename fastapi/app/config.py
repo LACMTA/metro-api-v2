@@ -49,7 +49,7 @@ def get_pgbouncer_uri(original_uri):
 
     # Replace the hostname and port with the ones for PgBouncer
     pgbouncer_host = 'localhost'  # PgBouncer is running on the same machine
-    pgbouncer_port = 6432  # Default PgBouncer port
+    pgbouncer_port = '6432'  # Default PgBouncer port
 
     # Construct the new URI
     pgbouncer_uri = urlunparse(
