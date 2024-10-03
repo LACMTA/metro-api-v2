@@ -24,6 +24,11 @@ const sidebars = {
       type: 'doc',
       id: 'docs',
       label: 'Documentation Site'
+    },
+    {
+      type: 'doc',
+      id: 'websockets',
+      label: 'WebSockets'
     }
   ],
   openApiSidebar: [
