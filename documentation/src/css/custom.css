@@ -75,3 +75,7 @@
   content: "patch";
   background-color: var(--openapi-code-orange);
 }
+
+* {
+  line-height: 1.5em;
+}
