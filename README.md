@@ -232,3 +232,6 @@ docker build . -t metro-api-v2:metro-api-v2 .
 # runs metro-api-v2 image
 docker run --rm -it  -p 80:80/tcp metro-api-v2:metro-api-v2
 ```
+
+### Error connection to server at "localhost"
+
